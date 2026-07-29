@@ -43,7 +43,7 @@ The following production services are intentionally left as the next implementat
 Flutter was not installed in the environment that generated this starter, so it could not be compiled here. On a machine with a current Flutter SDK:
 
 ```bash
-cd adl_reminder_flutter
+cd adl_reminder_apk
 ./bootstrap_android.sh
 flutter pub get
 flutter test
