@@ -1,13 +1,11 @@
 import 'package:flutter/material.dart';
 
 import '../app_controller.dart';
+import '../l10n/app_localizations.dart';
 import '../models.dart';
 
 class TaskSummaryCard extends StatelessWidget {
-  const TaskSummaryCard({
-    super.key,
-    required this.controller,
-  });
+  const TaskSummaryCard({super.key, required this.controller});
 
   final AppController controller;
 
@@ -47,17 +45,13 @@ class TaskSummaryCard extends StatelessWidget {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            'Task summary',
-                            style: Theme.of(context)
-                                .textTheme
-                                .titleMedium
+                            context.l10n.text('taskSummary'),
+                            style: Theme.of(context).textTheme.titleMedium
                                 ?.copyWith(fontWeight: FontWeight.w700),
                           ),
                           Text(
-                            '${summary.total} task${summary.total == 1 ? '' : 's'} overall',
-                            style: Theme.of(context)
-                                .textTheme
-                                .bodySmall
+                            context.l10n.tasksOverall(summary.total),
+                            style: Theme.of(context).textTheme.bodySmall
                                 ?.copyWith(color: scheme.onSurfaceVariant),
                           ),
                         ],
@@ -71,7 +65,7 @@ class TaskSummaryCard extends StatelessWidget {
                     Expanded(
                       child: _StatusMetric(
                         icon: Icons.task_alt,
-                        label: 'Done',
+                        label: context.l10n.text('done'),
                         value: summary.done,
                         foreground: scheme.primary,
                         background: scheme.primaryContainer,
@@ -81,7 +75,7 @@ class TaskSummaryCard extends StatelessWidget {
                     Expanded(
                       child: _StatusMetric(
                         icon: Icons.warning_amber_rounded,
-                        label: 'Overdue',
+                        label: context.l10n.text('overdue'),
                         value: summary.overdue,
                         foreground: scheme.error,
                         background: scheme.errorContainer,
@@ -91,7 +85,7 @@ class TaskSummaryCard extends StatelessWidget {
                     Expanded(
                       child: _StatusMetric(
                         icon: Icons.pending_actions_outlined,
-                        label: 'Undone',
+                        label: context.l10n.text('undone'),
                         value: summary.undone,
                         foreground: scheme.tertiary,
                         background: scheme.tertiaryContainer,
@@ -101,10 +95,10 @@ class TaskSummaryCard extends StatelessWidget {
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  'Undone tasks are active tasks that are not overdue.',
+                  context.l10n.text('undoneExplanation'),
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: scheme.onSurfaceVariant,
-                      ),
+                    color: scheme.onSurfaceVariant,
+                  ),
                 ),
               ],
             ),
@@ -114,8 +108,8 @@ class TaskSummaryCard extends StatelessWidget {
             tilePadding: const EdgeInsets.symmetric(horizontal: 16),
             childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
             leading: const Icon(Icons.repeat_rounded),
-            title: const Text('Status by schedule'),
-            subtitle: const Text('Each recurring reminder is counted once'),
+            title: Text(context.l10n.text('statusBySchedule')),
+            subtitle: Text(context.l10n.text('recurringCountedOnce')),
             children: [
               const SizedBox(height: 4),
               _ScheduleSummaryTable(summaries: scheduleSummaries),
@@ -157,9 +151,9 @@ class _StatusMetric extends StatelessWidget {
           Text(
             '$value',
             style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                  color: foreground,
-                  fontWeight: FontWeight.w800,
-                ),
+              color: foreground,
+              fontWeight: FontWeight.w800,
+            ),
           ),
           Text(
             label,
@@ -191,10 +185,10 @@ class _ScheduleSummaryTable extends StatelessWidget {
       child: Column(
         children: [
           _ScheduleRow(
-            label: 'Schedule',
-            done: 'Done',
-            overdue: 'Overdue',
-            undone: 'Undone',
+            label: context.l10n.text('schedule'),
+            done: context.l10n.text('done'),
+            overdue: context.l10n.text('overdue'),
+            undone: context.l10n.text('undone'),
             textStyle: textTheme.labelSmall?.copyWith(
               color: scheme.onSurfaceVariant,
               fontWeight: FontWeight.w700,
@@ -206,7 +200,7 @@ class _ScheduleSummaryTable extends StatelessWidget {
               builder: (context) {
                 final summary = summaries[group] ?? const TaskStatusSummary();
                 return _ScheduleRow(
-                  label: _groupLabel(group),
+                  label: _groupLabel(context, group),
                   done: '${summary.done}',
                   overdue: '${summary.overdue}',
                   undone: '${summary.undone}',
@@ -220,13 +214,14 @@ class _ScheduleSummaryTable extends StatelessWidget {
     );
   }
 
-  String _groupLabel(ReminderScheduleGroup group) {
+  String _groupLabel(BuildContext context, ReminderScheduleGroup group) {
     return switch (group) {
-      ReminderScheduleGroup.oneTime => 'One-time',
-      ReminderScheduleGroup.daily => 'Daily',
-      ReminderScheduleGroup.weekly => 'Weekly',
-      ReminderScheduleGroup.monthly => 'Monthly',
-      ReminderScheduleGroup.yearly => 'Yearly',
+      ReminderScheduleGroup.oneTime => context.l10n.text('oneTime'),
+      ReminderScheduleGroup.dateRange => context.l10n.text('dateRange'),
+      ReminderScheduleGroup.daily => context.l10n.text('daily'),
+      ReminderScheduleGroup.weekly => context.l10n.text('weekly'),
+      ReminderScheduleGroup.monthly => context.l10n.text('monthly'),
+      ReminderScheduleGroup.yearly => context.l10n.text('yearly'),
     };
   }
 }

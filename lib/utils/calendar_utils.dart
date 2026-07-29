@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../l10n/app_localizations.dart';
 import '../models.dart';
 
 const List<String> ethiopianMonthNames = <String>[
@@ -29,7 +30,8 @@ int ethiopianMonthLength(int year, int month) {
 }
 
 DateTime ethiopianToGregorian(EthiopianDateValue value) {
-  final jdn = 1724221 +
+  final jdn =
+      1724221 +
       365 * (value.year - 1) +
       value.year ~/ 4 +
       30 * (value.month - 1) +
@@ -56,12 +58,7 @@ EthiopianDateValue gregorianToEthiopian(DateTime date) {
 }
 
 int _ethiopianToJdn(int year, int month, int day) {
-  return 1724221 +
-      365 * (year - 1) +
-      year ~/ 4 +
-      30 * (month - 1) +
-      day -
-      1;
+  return 1724221 + 365 * (year - 1) + year ~/ 4 + 30 * (month - 1) + day - 1;
 }
 
 int _gregorianToJdn(int year, int month, int day) {
@@ -105,6 +102,13 @@ String formatTaskSchedule(ReminderSchedule schedule, BuildContext context) {
       }
       if (schedule.date == null) return time;
       return '${localizations.formatMediumDate(schedule.date!)} • $time';
+    case ReminderType.dateRange:
+      if (schedule.date == null || schedule.endDate == null) return time;
+      return context.l10n.text('rangeSchedule', {
+        'start': localizations.formatMediumDate(schedule.date!),
+        'end': localizations.formatMediumDate(schedule.endDate!),
+        'time': time,
+      });
     case ReminderType.custom:
       final unit = switch (schedule.recurrenceUnit) {
         RecurrenceUnit.weekly => 'Weekly',

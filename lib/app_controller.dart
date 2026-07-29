@@ -2,7 +2,11 @@ import 'package:flutter/material.dart';
 
 import 'models.dart';
 
+enum AppLanguage { english, amharic }
+
 class AppController extends ChangeNotifier {
+  static const String todayCategoryId = '__today__';
+
   AppController() {
     _seedDemoData();
   }
@@ -14,34 +18,44 @@ class AppController extends ChangeNotifier {
 
   String searchQuery = '';
   String? selectedCategoryId;
+  AppLanguage language = AppLanguage.english;
+
+  Locale get locale => Locale(language == AppLanguage.amharic ? 'am' : 'en');
+
+  void setLanguage(AppLanguage value) {
+    if (language == value) return;
+    language = value;
+    notifyListeners();
+  }
 
   List<ReminderTask> tasksFor(DashboardTaskState state) {
     final normalized = searchQuery.trim().toLowerCase();
     final now = DateTime.now();
 
     return tasks.where((task) {
-      final categoryMatches = selectedCategoryId == null ||
-          task.categoryId == selectedCategoryId;
-      final queryMatches = normalized.isEmpty ||
+      final categoryMatches =
+          selectedCategoryId == null ||
+          (selectedCategoryId == todayCategoryId
+              ? task.schedule.occursOn(now)
+              : task.categoryId == selectedCategoryId);
+      final queryMatches =
+          normalized.isEmpty ||
           task.title.toLowerCase().contains(normalized) ||
           task.subTasks.any(
             (item) => item.title.toLowerCase().contains(normalized),
           );
       return categoryMatches && queryMatches && task.stateAt(now) == state;
-    }).toList()
-      ..sort((a, b) {
-        final aDue = a.dueAt;
-        final bDue = b.dueAt;
-        if (aDue == null && bDue == null) return a.title.compareTo(b.title);
-        if (aDue == null) return 1;
-        if (bDue == null) return -1;
-        return aDue.compareTo(bDue);
-      });
+    }).toList()..sort((a, b) {
+      final aDue = a.dueAt;
+      final bDue = b.dueAt;
+      if (aDue == null && bDue == null) return a.title.compareTo(b.title);
+      if (aDue == null) return 1;
+      if (bDue == null) return -1;
+      return aDue.compareTo(bDue);
+    });
   }
 
-  Map<TaskCategory, List<ReminderTask>> groupedTasks(
-    DashboardTaskState state,
-  ) {
+  Map<TaskCategory, List<ReminderTask>> groupedTasks(DashboardTaskState state) {
     final visibleTasks = tasksFor(state);
     final result = <TaskCategory, List<ReminderTask>>{};
     for (final category in categories) {
@@ -54,6 +68,10 @@ class AppController extends ChangeNotifier {
   }
 
   int categoryTaskCount(String categoryId) {
+    if (categoryId == todayCategoryId) {
+      final today = DateTime.now();
+      return tasks.where((task) => task.schedule.occursOn(today)).length;
+    }
     return tasks.where((task) => task.categoryId == categoryId).length;
   }
 
@@ -94,11 +112,7 @@ class AppController extends ChangeNotifier {
       }
     }
 
-    return TaskStatusSummary(
-      done: done,
-      overdue: overdue,
-      undone: undone,
-    );
+    return TaskStatusSummary(done: done, overdue: overdue, undone: undone);
   }
 
   void setSearchQuery(String value) {
@@ -139,6 +153,22 @@ class AppController extends ChangeNotifier {
     return category;
   }
 
+  void renameCategory(TaskCategory category, String name) {
+    final normalized = name.trim();
+    if (normalized.isEmpty || normalized == category.name) return;
+    category.name = normalized;
+    notifyListeners();
+  }
+
+  void deleteCategory(TaskCategory category) {
+    categories.removeWhere((item) => item.id == category.id);
+    tasks.removeWhere((task) => task.categoryId == category.id);
+    if (selectedCategoryId == category.id) {
+      selectedCategoryId = null;
+    }
+    notifyListeners();
+  }
+
   void addTask(ReminderTask task) {
     tasks.add(task);
     notifyListeners();
@@ -149,11 +179,7 @@ class AppController extends ChangeNotifier {
     notifyListeners();
   }
 
-  void setSubTaskCompleted(
-    ReminderTask task,
-    SubTask subTask,
-    bool completed,
-  ) {
+  void setSubTaskCompleted(ReminderTask task, SubTask subTask, bool completed) {
     subTask.isDone = completed;
     notifyListeners();
   }
@@ -164,19 +190,19 @@ class AppController extends ChangeNotifier {
   }
 
   void _seedDemoData() {
-    const personal = TaskCategory(
+    final personal = TaskCategory(
       id: 'personal',
       name: 'Personal',
       icon: Icons.person_outline,
       color: Colors.teal,
     );
-    const work = TaskCategory(
+    final work = TaskCategory(
       id: 'work',
       name: 'Work',
       icon: Icons.work_outline,
       color: Colors.indigo,
     );
-    const health = TaskCategory(
+    final health = TaskCategory(
       id: 'health',
       name: 'Health',
       icon: Icons.favorite_outline,

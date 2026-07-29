@@ -1,15 +1,14 @@
 import 'package:flutter/material.dart';
 
 import '../app_controller.dart';
+import '../l10n/app_localizations.dart';
 import '../models.dart';
 import '../utils/calendar_utils.dart';
+import 'category_name_dialog.dart';
 import 'ethiopian_date_picker.dart';
 
 class AddTaskSheet extends StatefulWidget {
-  const AddTaskSheet({
-    super.key,
-    required this.controller,
-  });
+  const AddTaskSheet({super.key, required this.controller});
 
   final AppController controller;
 
@@ -28,20 +27,31 @@ class _AddTaskSheetState extends State<AddTaskSheet> {
   RecurrenceUnit _recurrenceUnit = RecurrenceUnit.weekly;
   CalendarSystem _calendarSystem = CalendarSystem.ethiopian;
   DateTime _gregorianDate = DateTime.now().add(const Duration(days: 1));
+  DateTime _gregorianEndDate = DateTime.now().add(const Duration(days: 2));
   EthiopianDateValue _ethiopianDate = gregorianToEthiopian(
     DateTime.now().add(const Duration(days: 1)),
   );
+  EthiopianDateValue _ethiopianEndDate = gregorianToEthiopian(
+    DateTime.now().add(const Duration(days: 2)),
+  );
   TimeOfDay _time = const TimeOfDay(hour: 9, minute: 0);
   final Set<int> _weekdays = <int>{DateTime.monday};
-  bool _notificationsEnabled = true;
+  ReminderDelivery _delivery = ReminderDelivery.notification;
 
   @override
   void initState() {
     super.initState();
-    _categoryId = widget.controller.selectedCategoryId ??
-        (widget.controller.categories.isNotEmpty
-            ? widget.controller.categories.first.id
-            : null);
+    final selectedId = widget.controller.selectedCategoryId;
+    _categoryId =
+        selectedId != null &&
+            selectedId != AppController.todayCategoryId &&
+            widget.controller.categories.any(
+              (category) => category.id == selectedId,
+            )
+        ? selectedId
+        : (widget.controller.categories.isNotEmpty
+              ? widget.controller.categories.first.id
+              : null);
     _calendarSystem = widget.controller.settings.defaultCalendar;
   }
 
@@ -69,7 +79,9 @@ class _AddTaskSheetState extends State<AddTaskSheet> {
           builder: (context, scrollController) {
             return Material(
               color: Theme.of(context).colorScheme.surface,
-              borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+              borderRadius: const BorderRadius.vertical(
+                top: Radius.circular(28),
+              ),
               clipBehavior: Clip.antiAlias,
               child: Form(
                 key: _formKey,
@@ -82,9 +94,7 @@ class _AddTaskSheetState extends State<AddTaskSheet> {
                         width: 42,
                         height: 4,
                         decoration: BoxDecoration(
-                          color: Theme.of(context)
-                              .colorScheme
-                              .onSurfaceVariant
+                          color: Theme.of(context).colorScheme.onSurfaceVariant
                               .withValues(alpha: 0.35),
                           borderRadius: BorderRadius.circular(99),
                         ),
@@ -95,21 +105,23 @@ class _AddTaskSheetState extends State<AddTaskSheet> {
                       children: [
                         Expanded(
                           child: Text(
-                            'Create reminder',
-                            style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                                  fontWeight: FontWeight.w700,
-                                ),
+                            context.l10n.text('createReminder'),
+                            style: Theme.of(context).textTheme.headlineSmall
+                                ?.copyWith(fontWeight: FontWeight.w700),
                           ),
                         ),
                         IconButton(
-                          tooltip: 'Close',
+                          tooltip: context.l10n.text('close'),
                           onPressed: () => Navigator.pop(context),
                           icon: const Icon(Icons.close),
                         ),
                       ],
                     ),
                     const SizedBox(height: 18),
-                    _SectionTitle(number: 1, title: 'Task category'),
+                    _SectionTitle(
+                      number: 1,
+                      title: context.l10n.text('taskCategory'),
+                    ),
                     const SizedBox(height: 10),
                     Row(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -117,17 +129,22 @@ class _AddTaskSheetState extends State<AddTaskSheet> {
                         Expanded(
                           child: DropdownButtonFormField<String>(
                             value: _categoryId,
-                            decoration: const InputDecoration(
-                              labelText: 'Category',
-                              prefixIcon: Icon(Icons.category_outlined),
+                            decoration: InputDecoration(
+                              labelText: context.l10n.text('category'),
+                              prefixIcon: const Icon(Icons.category_outlined),
                             ),
                             items: [
-                              for (final category in widget.controller.categories)
+                              for (final category
+                                  in widget.controller.categories)
                                 DropdownMenuItem(
                                   value: category.id,
                                   child: Row(
                                     children: [
-                                      Icon(category.icon, size: 18, color: category.color),
+                                      Icon(
+                                        category.icon,
+                                        size: 18,
+                                        color: category.color,
+                                      ),
                                       const SizedBox(width: 8),
                                       Text(category.name),
                                     ],
@@ -135,33 +152,37 @@ class _AddTaskSheetState extends State<AddTaskSheet> {
                                 ),
                             ],
                             validator: (value) => value == null
-                                ? 'Select or create a category.'
+                                ? context.l10n.text('selectCategory')
                                 : null,
-                            onChanged: (value) => setState(() => _categoryId = value),
+                            onChanged: (value) =>
+                                setState(() => _categoryId = value),
                           ),
                         ),
                         const SizedBox(width: 8),
                         IconButton.filledTonal(
-                          tooltip: 'Add category',
+                          tooltip: context.l10n.text('addCategory'),
                           onPressed: _addCategory,
                           icon: const Icon(Icons.add),
                         ),
                       ],
                     ),
                     const SizedBox(height: 24),
-                    _SectionTitle(number: 2, title: 'What needs to be done?'),
+                    _SectionTitle(
+                      number: 2,
+                      title: context.l10n.text('whatToDo'),
+                    ),
                     const SizedBox(height: 10),
                     TextFormField(
                       controller: _titleController,
                       textCapitalization: TextCapitalization.sentences,
-                      decoration: const InputDecoration(
-                        labelText: 'Task title',
-                        hintText: 'Example: Submit the monthly report',
-                        prefixIcon: Icon(Icons.edit_note_outlined),
+                      decoration: InputDecoration(
+                        labelText: context.l10n.text('taskTitle'),
+                        hintText: context.l10n.text('taskExample'),
+                        prefixIcon: const Icon(Icons.edit_note_outlined),
                       ),
                       validator: (value) {
                         if (value == null || value.trim().isEmpty) {
-                          return 'Enter a task title.';
+                          return context.l10n.text('enterTask');
                         }
                         return null;
                       },
@@ -170,8 +191,8 @@ class _AddTaskSheetState extends State<AddTaskSheet> {
                     CheckboxListTile(
                       contentPadding: EdgeInsets.zero,
                       controlAffinity: ListTileControlAffinity.leading,
-                      title: const Text('Multiple tasks?'),
-                      subtitle: const Text('Break this reminder into subtasks.'),
+                      title: Text(context.l10n.text('multipleTasks')),
+                      subtitle: Text(context.l10n.text('multipleTasksHelp')),
                       value: _multipleTasks,
                       onChanged: (value) {
                         setState(() {
@@ -187,27 +208,39 @@ class _AddTaskSheetState extends State<AddTaskSheet> {
                     ),
                     if (_multipleTasks) ...[
                       const SizedBox(height: 4),
-                      for (int index = 0; index < _subTaskControllers.length; index++)
+                      for (
+                        int index = 0;
+                        index < _subTaskControllers.length;
+                        index++
+                      )
                         Padding(
                           padding: const EdgeInsets.only(bottom: 10),
                           child: TextFormField(
                             controller: _subTaskControllers[index],
                             textCapitalization: TextCapitalization.sentences,
                             decoration: InputDecoration(
-                              labelText: 'Subtask ${index + 1}',
-                              prefixIcon: const Icon(Icons.subdirectory_arrow_right),
+                              labelText: context.l10n.text('subtask', {
+                                'count': index + 1,
+                              }),
+                              prefixIcon: const Icon(
+                                Icons.subdirectory_arrow_right,
+                              ),
                               suffixIcon: _subTaskControllers.length > 2
                                   ? IconButton(
-                                      tooltip: 'Remove subtask',
+                                      tooltip: context.l10n.text(
+                                        'removeSubtask',
+                                      ),
                                       onPressed: () => _removeSubTask(index),
-                                      icon: const Icon(Icons.remove_circle_outline),
+                                      icon: const Icon(
+                                        Icons.remove_circle_outline,
+                                      ),
                                     )
                                   : null,
                             ),
                             validator: (value) {
                               if (_multipleTasks &&
                                   (value == null || value.trim().isEmpty)) {
-                                return 'Enter a subtask.';
+                                return context.l10n.text('enterSubtask');
                               }
                               return null;
                             },
@@ -217,34 +250,56 @@ class _AddTaskSheetState extends State<AddTaskSheet> {
                         alignment: Alignment.centerLeft,
                         child: TextButton.icon(
                           onPressed: () => setState(
-                            () => _subTaskControllers.add(TextEditingController()),
+                            () => _subTaskControllers.add(
+                              TextEditingController(),
+                            ),
                           ),
                           icon: const Icon(Icons.add),
-                          label: const Text('Add another subtask'),
+                          label: Text(context.l10n.text('addSubtask')),
                         ),
                       ),
                     ],
                     const SizedBox(height: 24),
-                    _SectionTitle(number: 3, title: 'Reminder type'),
+                    _SectionTitle(
+                      number: 3,
+                      title: context.l10n.text('reminderType'),
+                    ),
                     const SizedBox(height: 10),
                     DropdownButtonFormField<ReminderType>(
                       value: _reminderType,
-                      decoration: const InputDecoration(
-                        labelText: 'Repeat schedule',
-                        prefixIcon: Icon(Icons.repeat),
+                      isExpanded: true,
+                      decoration: InputDecoration(
+                        labelText: context.l10n.text('repeatSchedule'),
+                        prefixIcon: const Icon(Icons.repeat),
                       ),
-                      items: const [
+                      items: [
                         DropdownMenuItem(
                           value: ReminderType.specificDate,
-                          child: Text('On a specific date'),
+                          child: Text(context.l10n.text('specificDate')),
+                        ),
+                        DropdownMenuItem(
+                          value: ReminderType.dateRange,
+                          child: Text(
+                            context.l10n.text('dateRange'),
+                            overflow: TextOverflow.ellipsis,
+                          ),
                         ),
                         DropdownMenuItem(
                           value: ReminderType.everyday,
-                          child: Text('Every day'),
+                          child: Text(context.l10n.text('everyDay')),
                         ),
                         DropdownMenuItem(
                           value: ReminderType.custom,
-                          child: Text('Specific days / weekly / monthly / yearly'),
+                          child: Text(context.l10n.text('customRepeat')),
+                        ),
+                      ],
+                      selectedItemBuilder: (context) => [
+                        Text(context.l10n.text('specificDate')),
+                        Text(context.l10n.text('dateRange')),
+                        Text(context.l10n.text('everyDay')),
+                        Text(
+                          context.l10n.text('customRecurrence'),
+                          overflow: TextOverflow.ellipsis,
                         ),
                       ],
                       onChanged: (value) => setState(
@@ -253,25 +308,28 @@ class _AddTaskSheetState extends State<AddTaskSheet> {
                     ),
                     if (_reminderType == ReminderType.custom) ...[
                       const SizedBox(height: 12),
-                      SegmentedButton<RecurrenceUnit>(
-                        segments: const [
-                          ButtonSegment(
-                            value: RecurrenceUnit.weekly,
-                            label: Text('Weekly'),
-                          ),
-                          ButtonSegment(
-                            value: RecurrenceUnit.monthly,
-                            label: Text('Monthly'),
-                          ),
-                          ButtonSegment(
-                            value: RecurrenceUnit.yearly,
-                            label: Text('Yearly'),
-                          ),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: [
+                          for (final unit in RecurrenceUnit.values)
+                            ChoiceChip(
+                              label: Text(switch (unit) {
+                                RecurrenceUnit.weekly => context.l10n.text(
+                                  'weekly',
+                                ),
+                                RecurrenceUnit.monthly => context.l10n.text(
+                                  'monthly',
+                                ),
+                                RecurrenceUnit.yearly => context.l10n.text(
+                                  'yearly',
+                                ),
+                              }),
+                              selected: _recurrenceUnit == unit,
+                              onSelected: (_) =>
+                                  setState(() => _recurrenceUnit = unit),
+                            ),
                         ],
-                        selected: <RecurrenceUnit>{_recurrenceUnit},
-                        onSelectionChanged: (value) => setState(
-                          () => _recurrenceUnit = value.first,
-                        ),
                       ),
                       if (_recurrenceUnit == RecurrenceUnit.weekly) ...[
                         const SizedBox(height: 12),
@@ -305,19 +363,22 @@ class _AddTaskSheetState extends State<AddTaskSheet> {
                       ],
                     ],
                     const SizedBox(height: 24),
-                    _SectionTitle(number: 4, title: 'Notification date and time'),
+                    _SectionTitle(
+                      number: 4,
+                      title: context.l10n.text('notificationDateTime'),
+                    ),
                     const SizedBox(height: 10),
                     SegmentedButton<CalendarSystem>(
-                      segments: const [
+                      segments: [
                         ButtonSegment(
                           value: CalendarSystem.ethiopian,
-                          icon: Icon(Icons.calendar_month_outlined),
-                          label: Text('Ethiopian'),
+                          icon: const Icon(Icons.calendar_month_outlined),
+                          label: Text(context.l10n.text('ethiopian')),
                         ),
                         ButtonSegment(
                           value: CalendarSystem.gregorian,
-                          icon: Icon(Icons.event_outlined),
-                          label: Text('Gregorian'),
+                          icon: const Icon(Icons.event_outlined),
+                          label: Text(context.l10n.text('gregorian')),
                         ),
                       ],
                       selected: <CalendarSystem>{_calendarSystem},
@@ -326,34 +387,17 @@ class _AddTaskSheetState extends State<AddTaskSheet> {
                       },
                     ),
                     const SizedBox(height: 12),
-                    if (_reminderType != ReminderType.everyday)
-                      ListTile(
-                        contentPadding: const EdgeInsets.symmetric(horizontal: 12),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(14),
-                          side: BorderSide(
-                            color: Theme.of(context).colorScheme.outlineVariant,
-                          ),
-                        ),
-                        leading: const Icon(Icons.calendar_today_outlined),
-                        title: Text(
-                          _calendarSystem == CalendarSystem.ethiopian
-                              ? '${ethiopianMonthNames[_ethiopianDate.month - 1]} '
-                                  '${_ethiopianDate.day}, ${_ethiopianDate.year} EC'
-                              : MaterialLocalizations.of(context)
-                                  .formatMediumDate(_gregorianDate),
-                        ),
-                        subtitle: Text(
-                          _calendarSystem == CalendarSystem.ethiopian
-                              ? 'Gregorian: ${MaterialLocalizations.of(context).formatMediumDate(ethiopianToGregorian(_ethiopianDate))}'
-                              : 'Gregorian calendar',
-                        ),
-                        trailing: const Icon(Icons.edit_calendar_outlined),
-                        onTap: _pickDate,
-                      ),
+                    if (_reminderType != ReminderType.everyday) ...[
+                      if (_reminderType == ReminderType.dateRange)
+                        _buildDateRangeSelection(context)
+                      else
+                        _buildDateTile(context, isEnd: false),
+                    ],
                     const SizedBox(height: 10),
                     ListTile(
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 12),
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                      ),
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(14),
                         side: BorderSide(
@@ -361,28 +405,57 @@ class _AddTaskSheetState extends State<AddTaskSheet> {
                         ),
                       ),
                       leading: const Icon(Icons.schedule),
-                      title: Text(MaterialLocalizations.of(context).formatTimeOfDay(_time)),
-                      subtitle: const Text('Reminder time'),
+                      title: Text(
+                        MaterialLocalizations.of(
+                          context,
+                        ).formatTimeOfDay(_time),
+                      ),
+                      subtitle: Text(context.l10n.text('reminderTime')),
                       trailing: const Icon(Icons.edit_outlined),
                       onTap: _pickTime,
                     ),
                     const SizedBox(height: 8),
-                    SwitchListTile(
-                      contentPadding: EdgeInsets.zero,
-                      title: const Text('Send notification'),
-                      subtitle: const Text('Use sound and vibration preferences from Settings.'),
-                      value: _notificationsEnabled,
-                      onChanged: (value) => setState(
-                        () => _notificationsEnabled = value,
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: Text(
+                        context.l10n.text('deliveryType'),
+                        style: Theme.of(context).textTheme.titleSmall,
                       ),
+                    ),
+                    const SizedBox(height: 6),
+                    SegmentedButton<ReminderDelivery>(
+                      segments: [
+                        ButtonSegment(
+                          value: ReminderDelivery.notification,
+                          icon: const Icon(Icons.notifications_outlined),
+                          label: Text(context.l10n.text('notification')),
+                        ),
+                        ButtonSegment(
+                          value: ReminderDelivery.alarm,
+                          icon: const Icon(Icons.alarm_outlined),
+                          label: Text(context.l10n.text('alarm')),
+                        ),
+                      ],
+                      selected: {_delivery},
+                      onSelectionChanged: (value) =>
+                          setState(() => _delivery = value.first),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      context.l10n.text(
+                        _delivery == ReminderDelivery.alarm
+                            ? 'alarmDeliveryHelp'
+                            : 'notificationDeliveryHelp',
+                      ),
+                      style: Theme.of(context).textTheme.bodySmall,
                     ),
                     const SizedBox(height: 24),
                     FilledButton.icon(
                       onPressed: _saveTask,
                       icon: const Icon(Icons.add_task),
-                      label: const Padding(
-                        padding: EdgeInsets.symmetric(vertical: 14),
-                        child: Text('Create reminder'),
+                      label: Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        child: Text(context.l10n.text('createReminder')),
                       ),
                     ),
                   ],
@@ -395,18 +468,121 @@ class _AddTaskSheetState extends State<AddTaskSheet> {
     );
   }
 
-  Future<void> _pickDate() async {
+  Widget _buildDateTile(BuildContext context, {required bool isEnd}) {
+    final gregorian = isEnd ? _gregorianEndDate : _gregorianDate;
+    final ethiopian = isEnd ? _ethiopianEndDate : _ethiopianDate;
+    return ListTile(
+      contentPadding: const EdgeInsets.symmetric(horizontal: 12),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(14),
+        side: BorderSide(color: Theme.of(context).colorScheme.outlineVariant),
+      ),
+      leading: Icon(
+        isEnd ? Icons.event_available_outlined : Icons.calendar_today_outlined,
+      ),
+      title: Text(
+        _calendarSystem == CalendarSystem.ethiopian
+            ? '${ethiopianMonthNames[ethiopian.month - 1]} '
+                  '${ethiopian.day}, ${ethiopian.year} EC'
+            : MaterialLocalizations.of(context).formatMediumDate(gregorian),
+      ),
+      subtitle: Text(
+        _reminderType == ReminderType.dateRange
+            ? context.l10n.text(isEnd ? 'endDate' : 'startDate')
+            : (_calendarSystem == CalendarSystem.ethiopian
+                  ? 'Gregorian: ${MaterialLocalizations.of(context).formatMediumDate(ethiopianToGregorian(ethiopian))}'
+                  : context.l10n.text('gregorianCalendar')),
+      ),
+      trailing: const Icon(Icons.edit_calendar_outlined),
+      onTap: () => _pickDate(isEnd: isEnd),
+    );
+  }
+
+  Widget _buildDateRangeSelection(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Material(
+      color: scheme.primaryContainer.withValues(alpha: 0.45),
+      shape: RoundedRectangleBorder(
+        side: BorderSide(color: scheme.primary, width: 1.5),
+        borderRadius: BorderRadius.circular(18),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Padding(
+        padding: const EdgeInsets.all(8),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(8, 4, 8, 8),
+              child: Row(
+                children: [
+                  Icon(Icons.date_range_outlined, color: scheme.primary),
+                  const SizedBox(width: 8),
+                  Text(
+                    context.l10n.text('selectedDateRange'),
+                    style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                      color: scheme.primary,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            _buildDateTile(context, isEnd: false),
+            Padding(
+              padding: const EdgeInsets.only(left: 31),
+              child: Container(width: 2, height: 10, color: scheme.primary),
+            ),
+            _buildDateTile(context, isEnd: true),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _pickDate({required bool isEnd}) async {
     if (_calendarSystem == CalendarSystem.gregorian) {
+      if (_reminderType == ReminderType.dateRange) {
+        final selected = await showDateRangePicker(
+          context: context,
+          initialDateRange: DateTimeRange(
+            start: _gregorianDate,
+            end: _gregorianEndDate,
+          ),
+          firstDate: DateTime.now().subtract(const Duration(days: 365)),
+          lastDate: DateTime.now().add(const Duration(days: 3650)),
+        );
+        if (selected != null && mounted) {
+          setState(() {
+            _gregorianDate = selected.start;
+            _gregorianEndDate = selected.end;
+            _ethiopianDate = gregorianToEthiopian(selected.start);
+            _ethiopianEndDate = gregorianToEthiopian(selected.end);
+          });
+        }
+        return;
+      }
       final selected = await showDatePicker(
         context: context,
-        initialDate: _gregorianDate,
+        initialDate: isEnd ? _gregorianEndDate : _gregorianDate,
         firstDate: DateTime.now().subtract(const Duration(days: 365)),
         lastDate: DateTime.now().add(const Duration(days: 3650)),
       );
       if (selected != null && mounted) {
         setState(() {
-          _gregorianDate = selected;
-          _ethiopianDate = gregorianToEthiopian(selected);
+          if (isEnd) {
+            _gregorianEndDate = selected.isBefore(_gregorianDate)
+                ? _gregorianDate
+                : selected;
+            _ethiopianEndDate = gregorianToEthiopian(_gregorianEndDate);
+          } else {
+            _gregorianDate = selected;
+            _ethiopianDate = gregorianToEthiopian(selected);
+            if (_gregorianEndDate.isBefore(selected)) {
+              _gregorianEndDate = selected;
+              _ethiopianEndDate = gregorianToEthiopian(selected);
+            }
+          }
         });
       }
       return;
@@ -414,12 +590,24 @@ class _AddTaskSheetState extends State<AddTaskSheet> {
 
     final selected = await showEthiopianDatePickerDialog(
       context: context,
-      initialDate: _ethiopianDate,
+      initialDate: isEnd ? _ethiopianEndDate : _ethiopianDate,
     );
     if (selected != null && mounted) {
       setState(() {
-        _ethiopianDate = selected;
-        _gregorianDate = ethiopianToGregorian(selected);
+        final gregorian = ethiopianToGregorian(selected);
+        if (isEnd) {
+          _gregorianEndDate = gregorian.isBefore(_gregorianDate)
+              ? _gregorianDate
+              : gregorian;
+          _ethiopianEndDate = gregorianToEthiopian(_gregorianEndDate);
+        } else {
+          _ethiopianDate = selected;
+          _gregorianDate = gregorian;
+          if (_gregorianEndDate.isBefore(gregorian)) {
+            _gregorianEndDate = gregorian;
+            _ethiopianEndDate = selected;
+          }
+        }
       });
     }
   }
@@ -432,34 +620,14 @@ class _AddTaskSheetState extends State<AddTaskSheet> {
   }
 
   Future<void> _addCategory() async {
-    final textController = TextEditingController();
     final name = await showDialog<String>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('New category'),
-        content: TextField(
-          controller: textController,
-          autofocus: true,
-          textCapitalization: TextCapitalization.words,
-          decoration: const InputDecoration(
-            labelText: 'Category name',
-            hintText: 'Example: Finance',
-          ),
-          onSubmitted: (value) => Navigator.pop(context, value),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(context, textController.text),
-            child: const Text('Add'),
-          ),
-        ],
+      builder: (context) => CategoryNameDialog(
+        title: context.l10n.text('newCategory'),
+        actionLabel: context.l10n.text('add'),
+        hintText: context.l10n.text('financeExample'),
       ),
     );
-    textController.dispose();
 
     if (name != null && name.trim().isNotEmpty && mounted) {
       final category = widget.controller.addCategory(name);
@@ -479,8 +647,8 @@ class _AddTaskSheetState extends State<AddTaskSheet> {
     final date = _reminderType == ReminderType.everyday
         ? null
         : _calendarSystem == CalendarSystem.ethiopian
-            ? ethiopianToGregorian(_ethiopianDate)
-            : _gregorianDate;
+        ? ethiopianToGregorian(_ethiopianDate)
+        : _gregorianDate;
 
     final task = ReminderTask(
       id: 'task-${DateTime.now().microsecondsSinceEpoch}',
@@ -490,16 +658,27 @@ class _AddTaskSheetState extends State<AddTaskSheet> {
         type: _reminderType,
         calendarSystem: _calendarSystem,
         date: date,
-        ethiopianDate:
-            _calendarSystem == CalendarSystem.ethiopian ? _ethiopianDate : null,
+        endDate: _reminderType == ReminderType.dateRange
+            ? _gregorianEndDate
+            : null,
+        ethiopianDate: _calendarSystem == CalendarSystem.ethiopian
+            ? _ethiopianDate
+            : null,
+        ethiopianEndDate:
+            _calendarSystem == CalendarSystem.ethiopian &&
+                _reminderType == ReminderType.dateRange
+            ? _ethiopianEndDate
+            : null,
         time: _time,
-        recurrenceUnit:
-            _reminderType == ReminderType.custom ? _recurrenceUnit : null,
-        weekdays: _reminderType == ReminderType.custom &&
+        recurrenceUnit: _reminderType == ReminderType.custom
+            ? _recurrenceUnit
+            : null,
+        weekdays:
+            _reminderType == ReminderType.custom &&
                 _recurrenceUnit == RecurrenceUnit.weekly
             ? Set<int>.unmodifiable(_weekdays)
             : const <int>{},
-        notificationsEnabled: _notificationsEnabled,
+        delivery: _delivery,
       ),
       subTasks: _multipleTasks
           ? [
@@ -541,9 +720,9 @@ class _SectionTitle extends StatelessWidget {
         const SizedBox(width: 10),
         Text(
           title,
-          style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                fontWeight: FontWeight.w700,
-              ),
+          style: Theme.of(
+            context,
+          ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
         ),
       ],
     );

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 
 import 'app_controller.dart';
 import 'app_scope.dart';
@@ -36,43 +37,49 @@ class _ReminderAppState extends State<ReminderApp> {
     const seed = Color(0xFF156B5C);
     return AppScope(
       controller: controller,
-      child: MaterialApp(
-        title: 'ADL Reminder',
-        debugShowCheckedModeBanner: false,
-        theme: ThemeData(
-          colorScheme: ColorScheme.fromSeed(seedColor: seed),
-          useMaterial3: true,
-          inputDecorationTheme: const InputDecorationTheme(
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.all(Radius.circular(14)),
+      child: AnimatedBuilder(
+        animation: controller,
+        builder: (context, _) => MaterialApp(
+          title: 'ADL Reminder',
+          debugShowCheckedModeBanner: false,
+          locale: controller.locale,
+          supportedLocales: const [Locale('en'), Locale('am')],
+          localizationsDelegates: GlobalMaterialLocalizations.delegates,
+          theme: ThemeData(
+            colorScheme: ColorScheme.fromSeed(seedColor: seed),
+            useMaterial3: true,
+            inputDecorationTheme: const InputDecorationTheme(
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.all(Radius.circular(14)),
+              ),
+            ),
+            cardTheme: const CardThemeData(
+              elevation: 0,
+              margin: EdgeInsets.zero,
+            ),
+            snackBarTheme: const SnackBarThemeData(
+              behavior: SnackBarBehavior.floating,
             ),
           ),
-          cardTheme: const CardThemeData(
-            elevation: 0,
-            margin: EdgeInsets.zero,
-          ),
-          snackBarTheme: const SnackBarThemeData(
-            behavior: SnackBarBehavior.floating,
-          ),
-        ),
-        darkTheme: ThemeData(
-          colorScheme: ColorScheme.fromSeed(
-            seedColor: seed,
-            brightness: Brightness.dark,
-          ),
-          useMaterial3: true,
-          inputDecorationTheme: const InputDecorationTheme(
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.all(Radius.circular(14)),
+          darkTheme: ThemeData(
+            colorScheme: ColorScheme.fromSeed(
+              seedColor: seed,
+              brightness: Brightness.dark,
+            ),
+            useMaterial3: true,
+            inputDecorationTheme: const InputDecorationTheme(
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.all(Radius.circular(14)),
+              ),
+            ),
+            cardTheme: const CardThemeData(elevation: 0),
+            snackBarTheme: const SnackBarThemeData(
+              behavior: SnackBarBehavior.floating,
             ),
           ),
-          cardTheme: const CardThemeData(elevation: 0),
-          snackBarTheme: const SnackBarThemeData(
-            behavior: SnackBarBehavior.floating,
-          ),
+          themeMode: ThemeMode.system,
+          home: DashboardScreen(controller: controller),
         ),
-        themeMode: ThemeMode.system,
-        home: DashboardScreen(controller: controller),
       ),
     );
   }

@@ -1,6 +1,9 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../app_controller.dart';
+import '../l10n/app_localizations.dart';
 import '../models.dart';
 import '../utils/calendar_utils.dart';
 
@@ -18,7 +21,10 @@ class CategorizedTaskList extends StatelessWidget {
   Widget build(BuildContext context) {
     final grouped = controller.groupedTasks(state);
     if (grouped.isEmpty) {
-      return _EmptyState(state: state, hasSearch: controller.searchQuery.isNotEmpty);
+      return _EmptyState(
+        state: state,
+        hasSearch: controller.searchQuery.isNotEmpty,
+      );
     }
 
     return ListView(
@@ -73,16 +79,16 @@ class _CategoryHeader extends StatelessWidget {
         const SizedBox(width: 10),
         Text(
           category.name,
-          style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                fontWeight: FontWeight.w700,
-              ),
+          style: Theme.of(
+            context,
+          ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
         ),
         const Spacer(),
         Text(
-          '$count task${count == 1 ? '' : 's'}',
+          context.l10n.taskCount(count),
           style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                color: Theme.of(context).colorScheme.onSurfaceVariant,
-              ),
+            color: Theme.of(context).colorScheme.onSurfaceVariant,
+          ),
         ),
       ],
     );
@@ -168,9 +174,9 @@ class _TaskTile extends StatelessWidget {
               Align(
                 alignment: Alignment.centerLeft,
                 child: Text(
-                  task.schedule.notificationsEnabled
-                      ? 'Notification enabled'
-                      : 'Notification disabled',
+                  task.schedule.delivery == ReminderDelivery.alarm
+                      ? context.l10n.text('alarm')
+                      : context.l10n.text('notification'),
                   style: Theme.of(context).textTheme.bodySmall,
                 ),
               ),
@@ -184,7 +190,9 @@ class _TaskTile extends StatelessWidget {
                   title: Text(
                     subTask.title,
                     style: TextStyle(
-                      decoration: subTask.isDone ? TextDecoration.lineThrough : null,
+                      decoration: subTask.isDone
+                          ? TextDecoration.lineThrough
+                          : null,
                     ),
                   ),
                   value: subTask.isDone,
@@ -201,18 +209,23 @@ class _TaskTile extends StatelessWidget {
   void _handleTaskCompletion(BuildContext context, bool completed) {
     final previous = task.isCompleted;
     controller.setTaskCompleted(task, completed);
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(
-        SnackBar(
-          duration: const Duration(seconds: 4),
-          content: Text(completed ? 'Task marked as done' : 'Task reopened'),
-          action: SnackBarAction(
-            label: 'Undo',
-            onPressed: () => controller.setTaskCompleted(task, previous),
-          ),
+    final messenger = ScaffoldMessenger.of(context);
+    messenger.hideCurrentSnackBar();
+    final snackBarController = messenger.showSnackBar(
+      SnackBar(
+        duration: const Duration(seconds: 5),
+        content: Text(
+          completed
+              ? context.l10n.text('markedDone')
+              : context.l10n.text('taskReopened'),
         ),
-      );
+        action: SnackBarAction(
+          label: context.l10n.text('undo'),
+          onPressed: () => controller.setTaskCompleted(task, previous),
+        ),
+      ),
+    );
+    Timer(const Duration(seconds: 5), snackBarController.close);
   }
 }
 
@@ -227,45 +240,56 @@ class _EmptyState extends StatelessWidget {
     final (icon, title, message) = hasSearch
         ? (
             Icons.search_off_outlined,
-            'No matching tasks',
-            'Try a different search phrase or category.',
+            context.l10n.text('noMatches'),
+            context.l10n.text('differentSearch'),
           )
         : switch (state) {
             DashboardTaskState.active => (
-                Icons.checklist_rounded,
-                'No active tasks',
-                'Tap the + button to create your next reminder.',
-              ),
+              Icons.checklist_rounded,
+              context.l10n.text('noActive'),
+              context.l10n.text('createNext'),
+            ),
             DashboardTaskState.overdue => (
-                Icons.event_available_outlined,
-                'Nothing overdue',
-                'You are all caught up.',
-              ),
+              Icons.event_available_outlined,
+              context.l10n.text('nothingOverdue'),
+              context.l10n.text('caughtUp'),
+            ),
             DashboardTaskState.completed => (
-                Icons.task_alt,
-                'No completed tasks yet',
-                'Completed reminders will appear here.',
-              ),
+              Icons.task_alt,
+              context.l10n.text('noCompleted'),
+              context.l10n.text('completedAppear'),
+            ),
           };
 
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(32),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icon, size: 64, color: Theme.of(context).colorScheme.primary),
-            const SizedBox(height: 16),
-            Text(title, style: Theme.of(context).textTheme.titleLarge),
-            const SizedBox(height: 8),
-            Text(
-              message,
-              textAlign: TextAlign.center,
-              style: Theme.of(context).textTheme.bodyMedium,
+    return CustomScrollView(
+      slivers: [
+        SliverFillRemaining(
+          hasScrollBody: false,
+          child: Center(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(32, 32, 32, 110),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    icon,
+                    size: 64,
+                    color: Theme.of(context).colorScheme.primary,
+                  ),
+                  const SizedBox(height: 16),
+                  Text(title, style: Theme.of(context).textTheme.titleLarge),
+                  const SizedBox(height: 8),
+                  Text(
+                    message,
+                    textAlign: TextAlign.center,
+                    style: Theme.of(context).textTheme.bodyMedium,
+                  ),
+                ],
+              ),
             ),
-          ],
+          ),
         ),
-      ),
+      ],
     );
   }
 }
