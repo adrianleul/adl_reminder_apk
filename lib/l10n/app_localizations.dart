@@ -62,6 +62,13 @@ class AppLocalizations {
       'completedAppear': 'Completed reminders will appear here.',
       'notifications': 'Notifications',
       'notificationsHelp': 'Allow reminders to alert you.',
+      'permissionRequired': 'Permission required',
+      'notificationPermissionHelp':
+          'Notifications are blocked. Allow notifications in App settings so reminders can appear.',
+      'exactAlarmPermissionHelp':
+          'Alarm access is blocked. Allow Alarms & reminders access so alarms can appear on time.',
+      'openSettings': 'Open settings',
+      'notNow': 'Not now',
       'alarmSound': 'Alarm sound',
       'customSounds': 'Custom sounds',
       'importAudio': 'Import audio',
@@ -110,6 +117,10 @@ class AppLocalizations {
       'customRecurrence': 'Custom recurrence',
       'notificationDateTime': 'Notification date and time',
       'reminderTime': 'Reminder time',
+      'timeAlreadyPassed': 'That time has already passed',
+      'chooseFutureDateTime':
+          '{date} at {time} is in the past. Choose a future date and time.',
+      'chooseAnotherTime': 'Choose another time',
       'sendNotification': 'Send notification',
       'notificationPreferences':
           'Use sound and vibration preferences from Settings.',
@@ -186,6 +197,13 @@ class AppLocalizations {
       'completedAppear': 'የተጠናቀቁ ማስታወሻዎች እዚህ ይታያሉ።',
       'notifications': 'ማሳወቂያዎች',
       'notificationsHelp': 'ማስታወሻዎች እንዲያሳውቁዎት ይፍቀዱ።',
+      'permissionRequired': 'ፈቃድ ያስፈልጋል',
+      'notificationPermissionHelp':
+          'ማሳወቂያዎች ታግደዋል። ማስታወሻዎች እንዲታዩ በመተግበሪያ ቅንብሮች ውስጥ ማሳወቂያን ይፍቀዱ።',
+      'exactAlarmPermissionHelp':
+          'የማንቂያ ፈቃድ ታግዷል። ማንቂያዎች በሰዓታቸው እንዲታዩ “ማንቂያዎች እና ማስታወሻዎች” ፈቃድን ይስጡ።',
+      'openSettings': 'ቅንብሮችን ክፈት',
+      'notNow': 'አሁን አይደለም',
       'alarmSound': 'የማንቂያ ድምፅ',
       'customSounds': 'ብጁ ድምፆች',
       'importAudio': 'ድምፅ አስገባ',
@@ -233,6 +251,9 @@ class AppLocalizations {
       'customRecurrence': 'ብጁ መደጋገሚያ',
       'notificationDateTime': 'የማሳወቂያ ቀን እና ሰዓት',
       'reminderTime': 'የማስታወሻ ሰዓት',
+      'timeAlreadyPassed': 'ይህ ሰዓት አልፏል',
+      'chooseFutureDateTime': '{date} በ{time} አልፏል። የወደፊት ቀን እና ሰዓት ይምረጡ።',
+      'chooseAnotherTime': 'ሌላ ሰዓት ምረጥ',
       'sendNotification': 'ማሳወቂያ ላክ',
       'notificationPreferences': 'ከቅንብሮች የድምፅ እና የንዝረት ምርጫዎችን ተጠቀም።',
       'newCategory': 'አዲስ ምድብ',

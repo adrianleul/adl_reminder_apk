@@ -6,6 +6,7 @@ import 'package:vibration/vibration.dart';
 import '../app_controller.dart';
 import '../l10n/app_localizations.dart';
 import '../models.dart';
+import '../services/notification_service.dart';
 import '../widgets/alarm_sound_picker.dart';
 
 class SettingsScreen extends StatelessWidget {
@@ -33,8 +34,10 @@ class SettingsScreen extends StatelessWidget {
                     title: Text(context.l10n.text('notifications')),
                     subtitle: Text(context.l10n.text('notificationsHelp')),
                     value: settings.notificationsEnabled,
-                    onChanged: (value) => controller.updateSettings(
-                      () => settings.notificationsEnabled = value,
+                    onChanged: (value) => _setNotificationsEnabled(
+                      context,
+                      value: value,
+                      settings: settings,
                     ),
                   ),
                   ListTile(
@@ -251,6 +254,48 @@ class SettingsScreen extends StatelessWidget {
       ),
     );
     if (value != null) onSelected(value);
+  }
+
+  Future<void> _setNotificationsEnabled(
+    BuildContext context, {
+    required bool value,
+    required AppSettings settings,
+  }) async {
+    if (!value) {
+      controller.updateSettings(() => settings.notificationsEnabled = false);
+      for (final task in controller.tasks) {
+        unawaited(NotificationService.instance.cancelTask(task));
+      }
+      return;
+    }
+    final issue = await NotificationService.instance.requestPermissions();
+    if (!context.mounted) return;
+    controller.updateSettings(
+      () => settings.notificationsEnabled = issue == null,
+    );
+    if (issue != null) {
+      await showDialog<void>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          icon: const Icon(Icons.notifications_off_outlined),
+          title: Text(context.l10n.text('permissionRequired')),
+          content: Text(context.l10n.text('notificationPermissionHelp')),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: Text(context.l10n.text('notNow')),
+            ),
+            FilledButton(
+              onPressed: () {
+                Navigator.pop(dialogContext);
+                NotificationService.instance.openPermissionSettings(issue);
+              },
+              child: Text(context.l10n.text('openSettings')),
+            ),
+          ],
+        ),
+      );
+    }
   }
 
   void _previewVibration(String pattern) {

@@ -1,6 +1,9 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import 'models.dart';
+import 'services/notification_service.dart';
 
 enum AppLanguage { english, amharic }
 
@@ -161,8 +164,14 @@ class AppController extends ChangeNotifier {
   }
 
   void deleteCategory(TaskCategory category) {
+    final removedTasks = tasks
+        .where((task) => task.categoryId == category.id)
+        .toList();
     categories.removeWhere((item) => item.id == category.id);
     tasks.removeWhere((task) => task.categoryId == category.id);
+    for (final task in removedTasks) {
+      unawaited(NotificationService.instance.cancelTask(task));
+    }
     if (selectedCategoryId == category.id) {
       selectedCategoryId = null;
     }
@@ -176,6 +185,11 @@ class AppController extends ChangeNotifier {
 
   void setTaskCompleted(ReminderTask task, bool completed) {
     task.completedAt = completed ? DateTime.now() : null;
+    unawaited(
+      completed
+          ? NotificationService.instance.cancelTask(task)
+          : NotificationService.instance.scheduleTask(task),
+    );
     notifyListeners();
   }
 

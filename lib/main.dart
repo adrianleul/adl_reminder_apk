@@ -4,9 +4,11 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'app_controller.dart';
 import 'app_scope.dart';
 import 'screens/dashboard_screen.dart';
+import 'services/notification_service.dart';
 
-void main() {
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await NotificationService.instance.initialize();
   runApp(const ReminderApp());
 }
 

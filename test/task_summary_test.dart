@@ -15,14 +15,8 @@ void main() {
         date: now.subtract(const Duration(days: 2)),
         completedAt: now.subtract(const Duration(days: 1)),
       ),
-      _task(
-        id: 'overdue',
-        date: now.subtract(const Duration(days: 1)),
-      ),
-      _task(
-        id: 'undone',
-        date: now.add(const Duration(days: 1)),
-      ),
+      _task(id: 'overdue', date: now.subtract(const Duration(days: 1))),
+      _task(id: 'undone', date: now.add(const Duration(days: 1))),
     ]);
 
     final summary = controller.overallSummary;
@@ -79,7 +73,7 @@ void main() {
     final bySchedule = controller.summaryBySchedule;
 
     expect(bySchedule[ReminderScheduleGroup.daily]?.undone, 1);
-    expect(bySchedule[ReminderScheduleGroup.weekly]?.overdue, 1);
+    expect(bySchedule[ReminderScheduleGroup.weekly]?.undone, 1);
     expect(bySchedule[ReminderScheduleGroup.monthly]?.done, 1);
   });
 }

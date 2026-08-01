@@ -565,7 +565,9 @@ class _AddTaskSheetState extends State<AddTaskSheet> {
       final selected = await showDatePicker(
         context: context,
         initialDate: isEnd ? _gregorianEndDate : _gregorianDate,
-        firstDate: DateTime.now().subtract(const Duration(days: 365)),
+        firstDate: _reminderType == ReminderType.specificDate
+            ? DateUtils.dateOnly(DateTime.now())
+            : DateTime.now().subtract(const Duration(days: 365)),
         lastDate: DateTime.now().add(const Duration(days: 3650)),
       );
       if (selected != null && mounted) {
@@ -593,8 +595,21 @@ class _AddTaskSheetState extends State<AddTaskSheet> {
       initialDate: isEnd ? _ethiopianEndDate : _ethiopianDate,
     );
     if (selected != null && mounted) {
+      final gregorian = ethiopianToGregorian(selected);
+      if (_reminderType == ReminderType.specificDate &&
+          gregorian.isBefore(DateUtils.dateOnly(DateTime.now()))) {
+        await _showPastTimeDialog(
+          DateTime(
+            gregorian.year,
+            gregorian.month,
+            gregorian.day,
+            _time.hour,
+            _time.minute,
+          ),
+        );
+        return;
+      }
       setState(() {
-        final gregorian = ethiopianToGregorian(selected);
         if (isEnd) {
           _gregorianEndDate = gregorian.isBefore(_gregorianDate)
               ? _gregorianDate
@@ -615,8 +630,45 @@ class _AddTaskSheetState extends State<AddTaskSheet> {
   Future<void> _pickTime() async {
     final selected = await showTimePicker(context: context, initialTime: _time);
     if (selected != null && mounted) {
+      final scheduledAt = DateTime(
+        _gregorianDate.year,
+        _gregorianDate.month,
+        _gregorianDate.day,
+        selected.hour,
+        selected.minute,
+      );
+      if (_reminderType == ReminderType.specificDate &&
+          !scheduledAt.isAfter(DateTime.now())) {
+        await _showPastTimeDialog(scheduledAt);
+        return;
+      }
       setState(() => _time = selected);
     }
+  }
+
+  Future<void> _showPastTimeDialog(DateTime scheduledAt) {
+    final localizations = MaterialLocalizations.of(context);
+    return showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        icon: const Icon(Icons.schedule_outlined),
+        title: Text(context.l10n.text('timeAlreadyPassed')),
+        content: Text(
+          context.l10n.text('chooseFutureDateTime', {
+            'date': localizations.formatMediumDate(scheduledAt),
+            'time': localizations.formatTimeOfDay(
+              TimeOfDay.fromDateTime(scheduledAt),
+            ),
+          }),
+        ),
+        actions: [
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: Text(context.l10n.text('chooseAnotherTime')),
+          ),
+        ],
+      ),
+    );
   }
 
   Future<void> _addCategory() async {
@@ -641,14 +693,30 @@ class _AddTaskSheetState extends State<AddTaskSheet> {
     setState(() {});
   }
 
-  void _saveTask() {
+  Future<void> _saveTask() async {
     if (!_formKey.currentState!.validate()) return;
 
     final date = _reminderType == ReminderType.everyday
         ? null
-        : _calendarSystem == CalendarSystem.ethiopian
-        ? ethiopianToGregorian(_ethiopianDate)
-        : _gregorianDate;
+        : DateTime(
+            _gregorianDate.year,
+            _gregorianDate.month,
+            _gregorianDate.day,
+          );
+
+    if (_reminderType == ReminderType.specificDate && date != null) {
+      final scheduledAt = DateTime(
+        date.year,
+        date.month,
+        date.day,
+        _time.hour,
+        _time.minute,
+      );
+      if (!scheduledAt.isAfter(DateTime.now())) {
+        await _showPastTimeDialog(scheduledAt);
+        return;
+      }
+    }
 
     final task = ReminderTask(
       id: 'task-${DateTime.now().microsecondsSinceEpoch}',

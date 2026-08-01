@@ -115,6 +115,23 @@ class ReminderSchedule {
     return DateTime(value.year, value.month, value.day, time.hour, time.minute);
   }
 
+  bool isOverdueAt(DateTime now) {
+    if (type == ReminderType.everyday || type == ReminderType.custom) {
+      return false;
+    }
+    final dueDate = type == ReminderType.dateRange ? endDate : date;
+    if (dueDate == null) return false;
+
+    final dueDay = DateTime(dueDate.year, dueDate.month, dueDate.day);
+    final today = DateTime(now.year, now.month, now.day);
+    if (dueDay.isBefore(today)) return true;
+    if (dueDay.isAfter(today)) return false;
+
+    final dueMinute = time.hour * 60 + time.minute;
+    final currentMinute = now.hour * 60 + now.minute;
+    return currentMinute > dueMinute;
+  }
+
   bool occursOn(DateTime day) {
     final target = DateTime(day.year, day.month, day.day);
     final start = date == null
@@ -164,8 +181,7 @@ class ReminderTask {
 
   DashboardTaskState stateAt(DateTime now) {
     if (isCompleted) return DashboardTaskState.completed;
-    final due = dueAt;
-    if (due != null && due.isBefore(now)) return DashboardTaskState.overdue;
+    if (schedule.isOverdueAt(now)) return DashboardTaskState.overdue;
     return DashboardTaskState.active;
   }
 

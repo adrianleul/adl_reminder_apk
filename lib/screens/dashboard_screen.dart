@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../app_controller.dart';
 import '../l10n/app_localizations.dart';
 import '../models.dart';
+import '../services/notification_service.dart';
 import '../widgets/add_task_sheet.dart';
 import '../widgets/app_drawer.dart';
 import '../widgets/category_name_dialog.dart';
@@ -19,14 +20,32 @@ class DashboardScreen extends StatefulWidget {
   State<DashboardScreen> createState() => _DashboardScreenState();
 }
 
-class _DashboardScreenState extends State<DashboardScreen> {
+class _DashboardScreenState extends State<DashboardScreen>
+    with WidgetsBindingObserver {
   bool _searchVisible = false;
   final TextEditingController _searchController = TextEditingController();
+  final List<ReminderTask> _tasksAwaitingPermission = [];
+  ReminderPermissionIssue? _permissionIssue;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    WidgetsBinding.instance.addPostFrameCallback(
+      (_) => _requestStartupPermission(),
+    );
+  }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _searchController.dispose();
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) _refreshPermission();
   }
 
   @override
@@ -101,15 +120,16 @@ class _DashboardScreenState extends State<DashboardScreen> {
             ),
             drawer: ReminderAppDrawer(
               controller: widget.controller,
-              onOpenSettings: () {
+              onOpenSettings: () async {
                 Navigator.pop(context);
-                Navigator.push(
+                await Navigator.push(
                   context,
                   MaterialPageRoute<void>(
                     builder: (_) =>
                         SettingsScreen(controller: widget.controller),
                   ),
                 );
+                await _refreshPermission();
               },
               onAddCategory: () => _showAddCategoryDialog(closeDrawer: true),
               onEditCategory: _showEditCategoryDialog,
@@ -117,6 +137,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
             ),
             body: NestedScrollView(
               headerSliverBuilder: (context, innerBoxIsScrolled) => [
+                if (_permissionIssue != null)
+                  SliverToBoxAdapter(child: _buildPermissionWarning(context)),
                 SliverToBoxAdapter(
                   child: TaskSummaryCard(controller: widget.controller),
                 ),
@@ -158,12 +180,118 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
 
     if (task != null && mounted) {
+      if (!widget.controller.settings.notificationsEnabled) {
+        _tasksAwaitingPermission.add(task);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(context.l10n.text('notificationDisabled'))),
+        );
+        return;
+      }
+      final issue = await NotificationService.instance.requestPermissions(
+        requireExactAlarm: task.schedule.delivery == ReminderDelivery.alarm,
+      );
+      if (!mounted) return;
+      if (issue == null) {
+        await NotificationService.instance.scheduleTask(task);
+      } else {
+        _tasksAwaitingPermission.add(task);
+        setState(() => _permissionIssue = issue);
+        await _showPermissionDialog(issue);
+      }
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(context.l10n.text('created', {'title': task.title})),
         ),
       );
     }
+  }
+
+  Future<void> _refreshPermission() async {
+    if (!widget.controller.settings.notificationsEnabled) {
+      if (mounted) setState(() => _permissionIssue = null);
+      return;
+    }
+    final requiresExact = _tasksAwaitingPermission.any(
+      (task) => task.schedule.delivery == ReminderDelivery.alarm,
+    );
+    final issue = await NotificationService.instance.permissionIssue(
+      requireExactAlarm: requiresExact,
+    );
+    if (!mounted) return;
+    setState(() => _permissionIssue = issue);
+    if (issue == null && _tasksAwaitingPermission.isNotEmpty) {
+      final pending = List<ReminderTask>.of(_tasksAwaitingPermission);
+      _tasksAwaitingPermission.clear();
+      await NotificationService.instance.scheduleTasks(pending);
+    }
+  }
+
+  Future<void> _requestStartupPermission() async {
+    if (!widget.controller.settings.notificationsEnabled) return;
+
+    final issue = await NotificationService.instance.requestPermissions();
+    if (!mounted) return;
+    setState(() => _permissionIssue = issue);
+    if (issue != null) {
+      await _showPermissionDialog(issue);
+    }
+  }
+
+  Widget _buildPermissionWarning(BuildContext context) {
+    final issue = _permissionIssue!;
+    final scheme = Theme.of(context).colorScheme;
+    return Card(
+      margin: const EdgeInsets.fromLTRB(12, 12, 12, 0),
+      color: scheme.errorContainer,
+      child: ListTile(
+        leading: Icon(Icons.notifications_off_outlined, color: scheme.error),
+        title: Text(context.l10n.text('permissionRequired')),
+        subtitle: Text(
+          context.l10n.text(
+            issue == ReminderPermissionIssue.exactAlarms
+                ? 'exactAlarmPermissionHelp'
+                : 'notificationPermissionHelp',
+          ),
+        ),
+        trailing: TextButton(
+          onPressed: () =>
+              NotificationService.instance.openPermissionSettings(issue),
+          child: Text(context.l10n.text('openSettings')),
+        ),
+        onTap: () => NotificationService.instance.openPermissionSettings(issue),
+      ),
+    );
+  }
+
+  Future<void> _showPermissionDialog(ReminderPermissionIssue issue) {
+    return showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        icon: const Icon(Icons.notifications_off_outlined),
+        title: Text(context.l10n.text('permissionRequired')),
+        content: Text(
+          context.l10n.text(
+            issue == ReminderPermissionIssue.exactAlarms
+                ? 'exactAlarmPermissionHelp'
+                : 'notificationPermissionHelp',
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: Text(context.l10n.text('notNow')),
+          ),
+          FilledButton(
+            onPressed: () {
+              Navigator.pop(dialogContext);
+              NotificationService.instance.openPermissionSettings(issue);
+            },
+            child: Text(context.l10n.text('openSettings')),
+          ),
+        ],
+      ),
+    );
   }
 
   Future<void> _showAddCategoryDialog({bool closeDrawer = false}) async {
