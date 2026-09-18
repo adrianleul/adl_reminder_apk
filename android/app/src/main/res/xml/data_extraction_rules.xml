@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Android 12+: back up tasks and settings (files/reminders.json) so they
+     survive a phone change, but never upload recorded alarm sounds. -->
+<data-extraction-rules>
+    <cloud-backup>
+        <include domain="file" path="reminders.json" />
+    </cloud-backup>
+    <device-transfer>
+        <include domain="file" path="reminders.json" />
+        <include domain="file" path="sounds/" />
+    </device-transfer>
+</data-extraction-rules>
