@@ -1,24 +1,24 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Status-bar icon: the logo mark as a white silhouette. -->
+<!-- ADL Reminder launcher mark (adaptive icon foreground). -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
-    android:width="24dp"
-    android:height="24dp"
+    android:width="108dp"
+    android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
     <group
         android:pivotX="54"
         android:pivotY="54"
-        android:scaleX="1.8"
-        android:scaleY="1.8">
+        android:scaleX="1.1"
+        android:scaleY="1.1">
         <!-- Countdown ring: from 12 o'clock, 300 degrees clockwise. -->
         <path
             android:pathData="M54,30 A24,24 0 1,1 33.22,42"
-            android:strokeColor="#FFFFFFFF"
+            android:strokeColor="#FF111318"
             android:strokeWidth="7"
             android:strokeLineCap="round" />
         <path
             android:pathData="M44,55 L51.5,62.5 L65,47"
-            android:strokeColor="#FFFFFFFF"
+            android:strokeColor="#FF111318"
             android:strokeWidth="7"
             android:strokeLineCap="round"
             android:strokeLineJoin="round" />
