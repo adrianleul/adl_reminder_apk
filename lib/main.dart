@@ -2,18 +2,23 @@ import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 
 import 'app_controller.dart';
-import 'app_scope.dart';
-import 'screens/dashboard_screen.dart';
+import 'screens/home_shell.dart';
 import 'services/notification_service.dart';
+import 'services/storage_service.dart';
+import 'theme.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await NotificationService.instance.initialize();
-  runApp(const ReminderApp());
+  final controller = await AppController.load(storage: FileReminderStorage());
+  runApp(ReminderApp(controller: controller));
 }
 
 class ReminderApp extends StatefulWidget {
-  const ReminderApp({super.key});
+  /// Without a [controller] the app runs on in-memory demo data (tests).
+  const ReminderApp({super.key, this.controller});
+
+  final AppController? controller;
 
   @override
   State<ReminderApp> createState() => _ReminderAppState();
@@ -25,7 +30,7 @@ class _ReminderAppState extends State<ReminderApp> {
   @override
   void initState() {
     super.initState();
-    controller = AppController();
+    controller = widget.controller ?? AppController();
   }
 
   @override
@@ -36,52 +41,19 @@ class _ReminderAppState extends State<ReminderApp> {
 
   @override
   Widget build(BuildContext context) {
-    const seed = Color(0xFF156B5C);
-    return AppScope(
-      controller: controller,
-      child: AnimatedBuilder(
-        animation: controller,
-        builder: (context, _) => MaterialApp(
-          title: 'ADL Reminder',
-          debugShowCheckedModeBanner: false,
-          locale: controller.locale,
-          supportedLocales: const [Locale('en'), Locale('am')],
-          localizationsDelegates: GlobalMaterialLocalizations.delegates,
-          theme: ThemeData(
-            colorScheme: ColorScheme.fromSeed(seedColor: seed),
-            useMaterial3: true,
-            inputDecorationTheme: const InputDecorationTheme(
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.all(Radius.circular(14)),
-              ),
-            ),
-            cardTheme: const CardThemeData(
-              elevation: 0,
-              margin: EdgeInsets.zero,
-            ),
-            snackBarTheme: const SnackBarThemeData(
-              behavior: SnackBarBehavior.floating,
-            ),
-          ),
-          darkTheme: ThemeData(
-            colorScheme: ColorScheme.fromSeed(
-              seedColor: seed,
-              brightness: Brightness.dark,
-            ),
-            useMaterial3: true,
-            inputDecorationTheme: const InputDecorationTheme(
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.all(Radius.circular(14)),
-              ),
-            ),
-            cardTheme: const CardThemeData(elevation: 0),
-            snackBarTheme: const SnackBarThemeData(
-              behavior: SnackBarBehavior.floating,
-            ),
-          ),
-          themeMode: ThemeMode.system,
-          home: DashboardScreen(controller: controller),
-        ),
+    // Only a language change needs to rebuild MaterialApp; task changes are
+    // handled by the screens that show them.
+    return ValueListenableBuilder<AppLanguage>(
+      valueListenable: controller.languageNotifier,
+      builder: (context, _, _) => MaterialApp(
+        title: 'ADL Reminder',
+        debugShowCheckedModeBanner: false,
+        locale: controller.locale,
+        supportedLocales: const [Locale('en'), Locale('am')],
+        localizationsDelegates: GlobalMaterialLocalizations.delegates,
+        // The design is light-only: ink on white with an orange accent.
+        theme: buildAppTheme(),
+        home: HomeShell(controller: controller),
       ),
     );
   }

@@ -9,12 +9,16 @@ class CategoryNameDialog extends StatefulWidget {
     required this.actionLabel,
     this.initialValue = '',
     this.hintText,
+    this.nameExists,
   });
 
   final String title;
   final String actionLabel;
   final String initialValue;
   final String? hintText;
+
+  /// Returns true when another category already uses the name.
+  final bool Function(String name)? nameExists;
 
   @override
   State<CategoryNameDialog> createState() => _CategoryNameDialogState();
@@ -50,9 +54,14 @@ class _CategoryNameDialogState extends State<CategoryNameDialog> {
             labelText: context.l10n.text('categoryName'),
             hintText: widget.hintText,
           ),
-          validator: (value) => value == null || value.trim().isEmpty
-              ? context.l10n.text('categoryRequired')
-              : null,
+          validator: (value) {
+            final name = value?.trim() ?? '';
+            if (name.isEmpty) return context.l10n.text('categoryRequired');
+            if (widget.nameExists?.call(name) ?? false) {
+              return context.l10n.text('categoryExists');
+            }
+            return null;
+          },
           onFieldSubmitted: (_) => _submit(),
         ),
       ),

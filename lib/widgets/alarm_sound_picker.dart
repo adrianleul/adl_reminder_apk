@@ -1,34 +1,31 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:audioplayers/audioplayers.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:record/record.dart';
 
 import '../app_controller.dart';
 import '../l10n/app_localizations.dart';
 import '../models.dart';
+import '../screens/settings_screen.dart' show builtInSoundLabel;
+import '../services/device_service.dart';
 
 class AlarmSoundPicker extends StatefulWidget {
   const AlarmSoundPicker({super.key, required this.controller});
 
   final AppController controller;
 
+  /// Largest audio file that can be imported.
+  static const int maxImportMegabytes = 15;
+
   @override
   State<AlarmSoundPicker> createState() => _AlarmSoundPickerState();
 }
 
 class _AlarmSoundPickerState extends State<AlarmSoundPicker> {
-  static const _builtInSounds = [
-    'Gentle bell',
-    'Digital alarm',
-    'Soft chime',
-    'Classic reminder',
-    'Silent',
-  ];
-
   final AudioPlayer _player = AudioPlayer();
   final AudioRecorder _recorder = AudioRecorder();
   bool _isRecording = false;
@@ -38,13 +35,29 @@ class _AlarmSoundPickerState extends State<AlarmSoundPicker> {
 
   @override
   void dispose() {
+    unawaited(DeviceService.instance.stopSystemSound());
     _player.dispose();
+    if (_isRecording) {
+      // Closing the sheet mid-recording discards the partial file.
+      unawaited(_recorder.cancel());
+    }
     _recorder.dispose();
     super.dispose();
   }
 
+  /// Sounds live in the app's private files directory, under `sounds/`,
+  /// which is excluded from cloud backup.
+  Future<Directory> _soundsDirectory() async {
+    final directory = Directory(
+      '${(await getApplicationSupportDirectory()).path}/sounds',
+    );
+    await directory.create(recursive: true);
+    return directory;
+  }
+
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     return SafeArea(
       child: Padding(
         padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
@@ -53,31 +66,36 @@ class _AlarmSoundPickerState extends State<AlarmSoundPicker> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Text(
-              context.l10n.text('alarmSound'),
+              l10n.text('alarmSound'),
               style: Theme.of(context).textTheme.titleLarge,
+            ),
+            const SizedBox(height: 4),
+            Text(
+              l10n.text('soundHelp'),
+              style: Theme.of(context).textTheme.bodySmall,
             ),
             const SizedBox(height: 8),
             Flexible(
               child: ListView(
                 shrinkWrap: true,
                 children: [
-                  for (final sound in _builtInSounds)
+                  for (final sound in BuiltInSound.values)
                     _SoundTile(
-                      name: sound,
+                      name: builtInSoundLabel(l10n, sound),
                       selected:
-                          _settings.alarmSound == sound &&
-                          _settings.alarmSoundPath == null,
-                      icon: sound == 'Silent'
+                          _settings.builtInSound == sound &&
+                          _settings.selectedCustomSound == null,
+                      icon: sound == BuiltInSound.silent
                           ? Icons.volume_off_outlined
                           : Icons.music_note_outlined,
-                      onTap: () => _selectSound(sound),
+                      onTap: () => _selectBuiltIn(sound),
                     ),
                   if (_settings.customAlarmSounds.isNotEmpty) ...[
                     const Divider(),
                     Padding(
                       padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
                       child: Text(
-                        context.l10n.text('customSounds'),
+                        l10n.text('customSounds'),
                         style: Theme.of(context).textTheme.labelLarge,
                       ),
                     ),
@@ -86,7 +104,9 @@ class _AlarmSoundPickerState extends State<AlarmSoundPicker> {
                         name: sound.name,
                         selected: _settings.alarmSoundPath == sound.path,
                         icon: Icons.audio_file_outlined,
-                        onTap: () => _selectSound(sound.name, path: sound.path),
+                        onTap: () => _selectCustom(sound),
+                        onDelete: () => _deleteCustom(sound),
+                        deleteTooltip: l10n.text('deleteSound'),
                       ),
                   ],
                 ],
@@ -99,7 +119,7 @@ class _AlarmSoundPickerState extends State<AlarmSoundPicker> {
                   child: OutlinedButton.icon(
                     onPressed: _isBusy || _isRecording ? null : _importAudio,
                     icon: const Icon(Icons.file_upload_outlined),
-                    label: Text(context.l10n.text('importAudio')),
+                    label: Text(l10n.text('importAudio')),
                   ),
                 ),
                 const SizedBox(width: 10),
@@ -117,9 +137,7 @@ class _AlarmSoundPickerState extends State<AlarmSoundPicker> {
                       _isRecording ? Icons.stop_rounded : Icons.mic_outlined,
                     ),
                     label: Text(
-                      context.l10n.text(
-                        _isRecording ? 'stopRecording' : 'recordAudio',
-                      ),
+                      l10n.text(_isRecording ? 'stopRecording' : 'recordAudio'),
                     ),
                   ),
                 ),
@@ -141,7 +159,7 @@ class _AlarmSoundPickerState extends State<AlarmSoundPicker> {
                     ),
                   ),
                   const SizedBox(width: 8),
-                  Text(context.l10n.text('recording')),
+                  Text(l10n.text('recording')),
                 ],
               ),
             ],
@@ -151,29 +169,54 @@ class _AlarmSoundPickerState extends State<AlarmSoundPicker> {
     );
   }
 
-  Future<void> _selectSound(String name, {String? path}) async {
-    widget.controller.updateSettings(() {
-      _settings.alarmSound = name;
-      _settings.alarmSoundPath = path;
-    });
-    setState(() {});
-    await _preview(path, silent: name == 'Silent');
+  Future<void> _stopPreview() async {
+    await _player.stop();
+    await DeviceService.instance.stopSystemSound();
   }
 
-  Future<void> _preview(String? path, {bool silent = false}) async {
-    await _player.stop();
-    if (silent) return;
+  Future<void> _selectBuiltIn(BuiltInSound sound) async {
+    widget.controller.updateSettings(() {
+      _settings.builtInSound = sound;
+      _settings.alarmSoundPath = null;
+    });
+    setState(() {});
+    await _stopPreview();
+    await DeviceService.instance.playSystemSound(sound);
+  }
+
+  Future<void> _selectCustom(CustomAlarmSound sound) async {
+    widget.controller.updateSettings(() {
+      _settings.alarmSoundPath = sound.path;
+    });
+    setState(() {});
+    await _stopPreview();
     try {
-      if (path == null) {
-        await SystemSound.play(SystemSoundType.alert);
-      } else {
-        await _player.play(DeviceFileSource(path));
-      }
+      await _player.play(DeviceFileSource(sound.path));
     } catch (_) {
-      if (mounted) {
-        _showMessage(context.l10n.text('audioPlaybackFailed'));
-      }
+      if (mounted) _showMessage(context.l10n.text('audioPlaybackFailed'));
     }
+  }
+
+  Future<void> _deleteCustom(CustomAlarmSound sound) async {
+    await _stopPreview();
+    widget.controller.updateSettings(() {
+      _settings.customAlarmSounds.removeWhere((item) => item.id == sound.id);
+      if (_settings.alarmSoundPath == sound.path) {
+        _settings.alarmSoundPath = null;
+      }
+    });
+    if (mounted) setState(() {});
+    try {
+      await File(sound.path).delete();
+    } on FileSystemException {
+      // Already gone.
+    }
+  }
+
+  void _addCustomSound(CustomAlarmSound sound) {
+    widget.controller.updateSettings(() {
+      _settings.customAlarmSounds.add(sound);
+    });
   }
 
   Future<void> _importAudio() async {
@@ -182,34 +225,34 @@ class _AlarmSoundPickerState extends State<AlarmSoundPicker> {
       final result = await FilePicker.platform.pickFiles(
         type: FileType.audio,
         allowMultiple: false,
-        withData: true,
       );
       if (result == null || !mounted) return;
       final picked = result.files.single;
-      final directory = await getApplicationDocumentsDirectory();
+      if (picked.size > AlarmSoundPicker.maxImportMegabytes * 1024 * 1024) {
+        _showMessage(
+          context.l10n.text('audioTooLarge', {
+            'size': AlarmSoundPicker.maxImportMegabytes,
+          }),
+        );
+        return;
+      }
+      if (picked.path == null) throw StateError('No readable audio file');
+      final directory = await _soundsDirectory();
       final extension = picked.extension?.replaceAll(
         RegExp(r'[^a-zA-Z0-9]'),
         '',
       );
       final destination =
-          '${directory.path}/alarm_import_${DateTime.now().microsecondsSinceEpoch}'
+          '${directory.path}/import_${DateTime.now().microsecondsSinceEpoch}'
           '${extension == null || extension.isEmpty ? '' : '.$extension'}';
-      if (picked.path != null) {
-        await File(picked.path!).copy(destination);
-      } else if (picked.bytes != null) {
-        await File(destination).writeAsBytes(picked.bytes!, flush: true);
-      } else {
-        throw StateError('No readable audio data');
-      }
+      await File(picked.path!).copy(destination);
       final sound = CustomAlarmSound(
         id: 'import-${DateTime.now().microsecondsSinceEpoch}',
         name: picked.name,
         path: destination,
       );
-      widget.controller.updateSettings(() {
-        _settings.customAlarmSounds.add(sound);
-      });
-      await _selectSound(sound.name, path: sound.path);
+      _addCustomSound(sound);
+      await _selectCustom(sound);
     } catch (_) {
       if (mounted) _showMessage(context.l10n.text('audioImportFailed'));
     } finally {
@@ -217,22 +260,52 @@ class _AlarmSoundPickerState extends State<AlarmSoundPicker> {
     }
   }
 
+  /// Explains why the microphone is needed before Android asks for it.
+  Future<bool> _confirmMicrophoneUse() async {
+    if (_settings.microphoneRationaleShown) return true;
+    final l10n = context.l10n;
+    final accepted = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        icon: const Icon(Icons.mic_outlined),
+        title: Text(l10n.text('microphoneRationaleTitle')),
+        content: Text(l10n.text('microphoneRationale')),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: Text(l10n.text('notNow')),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: Text(l10n.text('continue')),
+          ),
+        ],
+      ),
+    );
+    if (accepted != true) return false;
+    widget.controller.updatePreferences(
+      () => _settings.microphoneRationaleShown = true,
+    );
+    return true;
+  }
+
   Future<void> _toggleRecording() async {
     if (_isRecording) {
       await _stopRecording();
       return;
     }
+    if (!await _confirmMicrophoneUse() || !mounted) return;
     setState(() => _isBusy = true);
     try {
       if (!await _recorder.hasPermission()) {
         if (mounted) _showMessage(context.l10n.text('microphoneRequired'));
         return;
       }
-      final directory = await getApplicationDocumentsDirectory();
+      final directory = await _soundsDirectory();
       final path =
-          '${directory.path}/alarm_recording_'
+          '${directory.path}/recording_'
           '${DateTime.now().microsecondsSinceEpoch}.m4a';
-      await _player.stop();
+      await _stopPreview();
       await _recorder.start(
         const RecordConfig(encoder: AudioEncoder.aacLc),
         path: path,
@@ -251,16 +324,15 @@ class _AlarmSoundPickerState extends State<AlarmSoundPicker> {
     try {
       final path = await _recorder.stop();
       if (path == null) throw StateError('Recording did not return a path');
+      final number = _settings.customAlarmSounds.length + 1;
       final sound = CustomAlarmSound(
         id: 'recording-${DateTime.now().microsecondsSinceEpoch}',
-        name: recordedSoundName,
+        name: '$recordedSoundName $number',
         path: path,
       );
-      widget.controller.updateSettings(() {
-        _settings.customAlarmSounds.add(sound);
-      });
+      _addCustomSound(sound);
       if (mounted) setState(() => _isRecording = false);
-      await _selectSound(sound.name, path: sound.path);
+      await _selectCustom(sound);
     } catch (_) {
       if (mounted) _showMessage(context.l10n.text('recordingFailed'));
     } finally {
@@ -286,25 +358,39 @@ class _SoundTile extends StatelessWidget {
     required this.selected,
     required this.icon,
     required this.onTap,
+    this.onDelete,
+    this.deleteTooltip,
   });
 
   final String name;
   final bool selected;
   final IconData icon;
   final VoidCallback onTap;
+  final VoidCallback? onDelete;
+  final String? deleteTooltip;
 
   @override
   Widget build(BuildContext context) {
+    final status = selected
+        ? Icon(Icons.check_circle, color: Theme.of(context).colorScheme.primary)
+        : const Icon(Icons.play_arrow_rounded);
     return ListTile(
       selected: selected,
       leading: Icon(icon),
       title: Text(name, maxLines: 1, overflow: TextOverflow.ellipsis),
-      trailing: selected
-          ? Icon(
-              Icons.check_circle,
-              color: Theme.of(context).colorScheme.primary,
-            )
-          : const Icon(Icons.play_arrow_rounded),
+      trailing: onDelete == null
+          ? status
+          : Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                status,
+                IconButton(
+                  tooltip: deleteTooltip,
+                  onPressed: onDelete,
+                  icon: const Icon(Icons.delete_outline),
+                ),
+              ],
+            ),
       onTap: onTap,
     );
   }
