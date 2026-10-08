@@ -1,152 +1,111 @@
-# ADL Reminder — Flutter Android Starter
+# ADL Reminder
 
-An Android-first Material 3 reminder app starter based on the requested UX.
+An Android-first Flutter reminder app with Ethiopian and Gregorian calendar
+support, in English and Amharic.
 
-## Included in the starter
+## Features
 
-- Dashboard summary with **Done**, **Overdue**, and **Undone** totals.
-- Expandable schedule breakdown for one-time, daily, weekly, monthly, and yearly reminders.
-- Dashboard tabs: **Active**, **Overdue**, and **Completed**.
-- Tasks grouped by category inside every tab.
-- Drawer menu with all reminder categories, task counts, category filtering, add-category action, and Settings.
-- Search for task titles and subtasks.
-- Task completion checkbox with a four-second **Undo** snackbar.
-- Expandable tasks and individual subtask completion.
-- Floating **New task** button.
-- Guided reminder creation flow:
-  1. Category selection and category creation.
-  2. Task title and optional multiple subtasks.
-  3. Specific date, everyday, weekly, monthly, or yearly schedule.
-  4. Ethiopian or Gregorian calendar selection and time selection.
-- Built-in Ethiopian calendar picker with conversion to Gregorian `DateTime` for Android scheduling.
-- Settings UI for notifications, alarm sound, priority, vibration, vibration pattern, snooze duration, and default calendar.
-- Light/dark theme following the Android system theme.
-- Seed data for reviewing the design immediately.
+- Dashboard summary with **Done**, **Overdue** and **Undone** totals, plus a
+  breakdown by schedule type (one-time, date range, daily, weekly, monthly,
+  yearly).
+- **Active**, **Overdue** and **Completed** tabs, grouped by category. Overdue
+  status updates every minute.
+- Categories with add, rename (duplicate names rejected) and delete with Undo.
+  A **Today's tasks** view lists everything that occurs today.
+- Search across task titles and subtasks.
+- Create, view, edit and delete tasks (delete has Undo). Tasks can have
+  subtasks; ticking the last subtask finishes the task.
+- Reminder types: specific date, date range, every day, weekly (chosen
+  weekdays), monthly and yearly. Monthly and yearly repeat in the calendar the
+  task was created in: "every Meskerem 5" follows the Ethiopian calendar, and
+  day 31 falls back to the last day of shorter months.
+- Completing a recurring task finishes the current occurrence only; the
+  reminder comes back for the next one.
+- Delivery as a **notification** or a full-screen **alarm** with Done, Snooze
+  and Dismiss. Notifications have **Done** and **Snooze** buttons.
+- Settings that take effect immediately: notifications on/off, sound (system
+  sound, alarm tone, silent, or an imported/recorded custom sound), priority,
+  vibration and pattern, snooze length and default calendar.
+- Everything is saved on the device and survives restarts and reboots.
+- Light/dark theme following the system.
 
-## Current scope
+## How reminders are scheduled
 
-This package is a functional UI and in-memory state prototype. Creating tasks, categorizing them, searching, completing them, undoing completion, viewing overall and recurrence-based task summaries, editing settings, and Ethiopian/Gregorian date selection work in the running app.
+- Each task has a persisted `notificationId`. Its platform notifications use
+  IDs `notificationId * 32 + slot`, with slot 31 reserved for snoozes. IDs stay
+  the same across restarts, so reminders can always be cancelled.
+- Daily and weekly reminders repeat on the platform. Monthly, yearly and
+  date-range reminders are scheduled one by one, a rolling window ahead (6
+  months, 3 years, 21 days), because Android cannot express "last day of the
+  month" or Ethiopian months. The window is topped up whenever the app starts
+  or is resumed (at most every 30 minutes). Open the app at least that often
+  for long date ranges.
+- On every start the app rebuilds all reminders from the saved tasks and
+  removes notifications that belong to no task.
+- Android fixes a channel's sound and vibration once it is created, so each
+  combination of sound, vibration and priority gets its own channel ID (for
+  example `reminder_high_systemDefault_standard`); unused channels are deleted.
+- Custom sound files play on the in-app alarm screen. Notification channels
+  use the default notification sound or the alarm tone instead, because
+  Android cannot use private app files as channel sounds.
 
-The summary treats the three dashboard statuses as mutually exclusive: **Done** means completed, **Overdue** means unfinished and past due, and **Undone** means unfinished but not overdue. Each recurring reminder is counted once in its Daily, Weekly, Monthly, or Yearly group.
+## Project layout
 
-The following production services are intentionally left as the next implementation layer:
+```text
+lib/
+  app_controller.dart          State, persistence and scheduling sync
+  models.dart                  Tasks, schedules, recurrence rules, settings
+  l10n/app_localizations.dart  English and Amharic strings
+  screens/                     Dashboard, settings, alarm screen
+  services/
+    notification_service.dart  Platform reminders, channels, actions
+    storage_service.dart       JSON file storage (reminders.json)
+    device_service.dart        System sounds, show-over-lock-screen
+  utils/
+    ethiopian_calendar.dart    Calendar conversion
+    calendar_utils.dart        Localized date and schedule formatting
+  widgets/                     Sheets, dialogs, lists
+```
 
-- SQLite/Drift persistence for tasks, categories, recurrence rules, and settings.
-- Android local-notification scheduling and cancellation.
-- Notification actions such as **Done** and **Snooze**.
-- Recalculation of the next occurrence after a recurring task is completed.
-- Rescheduling after reboot, timezone change, app update, or device clock change.
-- Custom sound files under `android/app/src/main/res/raw/`.
+Data lives in `files/reminders.json` (written atomically). Custom sounds live
+in `files/sounds/`.
 
 ## Run the project
 
-Flutter was not installed in the environment that generated this starter, so it could not be compiled here. On a machine with a current Flutter SDK:
-
 ```bash
-cd adl_reminder_apk
-./bootstrap_android.sh
 flutter pub get
 flutter test
 flutter run
 ```
 
-`bootstrap_android.sh` creates the Android host project in a temporary directory and copies only the generated Android files into this starter, so the included Dart source and `pubspec.yaml` remain untouched.
+`android/` is committed and contains custom code: the `MainActivity` method
+channels, notification receivers (scheduled, boot, action), permissions,
+`showWhenLocked` handling for alarms, backup rules and release signing.
+`bootstrap_android.sh` only recreates `android/` when it is missing and
+refuses to overwrite it.
 
-## Suggested production packages
+## Release builds
 
-Add these after the UI is approved:
+Create `android/key.properties` (it is git-ignored):
 
-```yaml
-dependencies:
-  flutter_local_notifications: ^22.2.0
-  timezone: ^0.11.1
-  shared_preferences: ^2.5.5
-  # Choose one durable database layer:
-  # drift: <compatible-current-version>
-  # sqlite3_flutter_libs: <compatible-current-version>
+```properties
+storeFile=/absolute/path/to/upload-keystore.jks
+storePassword=...
+keyAlias=upload
+keyPassword=...
 ```
 
-Use `shared_preferences` only for non-critical preferences such as default calendar or snooze duration. Tasks and schedules should use a database.
+Without it, release builds are signed with the debug key and print a warning.
+They are fine for local testing but Google Play rejects them.
 
-## Recommended architecture
+## Google Play notes
 
-```text
-lib/
-  core/
-    calendar/
-    notifications/
-    persistence/
-  features/
-    dashboard/
-    reminders/
-    categories/
-    settings/
-  models/
-```
-
-For the next phase, move `AppController` behind repositories:
-
-```text
-ReminderController
-  -> TaskRepository
-  -> CategoryRepository
-  -> SettingsRepository
-  -> NotificationScheduler
-  -> RecurrenceCalculator
-```
-
-Store every scheduled instant internally as Gregorian UTC plus timezone metadata. Keep the user's selected calendar system and original Ethiopian date fields for display/editing.
-
-## Android notification details
-
-The production app should:
-
-1. Request notification permission on Android 13+.
-2. Request exact-alarm access only when exact timing is genuinely required.
-3. Register scheduled-notification and boot receivers.
-4. Use timezone-aware scheduling.
-5. Create distinct Android notification channels for different sound/vibration combinations.
-
-On Android 8+, sound and vibration settings are attached to a notification channel when that channel is first created. Changing the selected sound while reusing the same channel ID will not update the channel. A practical approach is to version channel IDs, for example:
-
-```text
-reminders_gentle_standard_v1
-reminders_digital_pulse_v1
-reminders_silent_none_v1
-```
-
-See `docs/android_manifest_snippet.xml` for the manifest additions.
-
-## Recurrence behavior recommendation
-
-- **Specific date:** one notification, then no next occurrence.
-- **Every day:** next selected local time after now.
-- **Weekly:** one or more selected weekdays at the chosen time.
-- **Monthly:** same day number; when absent, either use the month's last day or ask the user which behavior they prefer.
-- **Yearly:** same calendar date in the selected calendar system.
-- Ethiopian yearly recurrence should be calculated in the Ethiopian calendar first, then converted to Gregorian for scheduling.
-
-## Important data fields
-
-A production task record should include:
-
-```text
-id
-category_id
-title
-status
-calendar_system
-ethiopian_year / month / day (nullable)
-gregorian_local_date
-local_time
-timezone_id
-recurrence_type
-selected_weekdays
-notification_enabled
-sound_profile
-vibration_profile
-next_trigger_at_utc
-completed_at
-created_at
-updated_at
-```
+- `USE_FULL_SCREEN_INTENT`: on Android 14+, Play only allows it for alarm and
+  calling apps, and requires a declaration in the Play Console. Without the
+  permission, Android shows alarms as heads-up notifications instead.
+- `SCHEDULE_EXACT_ALARM`: exact timing is requested only for alarm reminders.
+  Notifications fall back to inexact scheduling if it is not granted.
+- `RECORD_AUDIO`: used only while recording a custom alarm sound. The app
+  explains this before Android asks. A privacy policy is required.
+- Backups: `reminders.json` is included in cloud backup; recorded sounds are
+  only copied during device-to-device transfer.

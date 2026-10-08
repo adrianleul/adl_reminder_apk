@@ -69,7 +69,7 @@ void main() {
 
     controller.renameCategory(category, 'Home');
 
-    expect(category.name, 'Home');
+    expect(controller.categoryById(category.id)?.name, 'Home');
   });
 
   group('overdue status', () {
@@ -122,7 +122,6 @@ void main() {
           type: ReminderType.specificDate,
           calendarSystem: CalendarSystem.ethiopian,
           date: ethiopianToGregorian(ethiopianDate),
-          ethiopianDate: ethiopianDate,
           time: const TimeOfDay(hour: 18, minute: 0),
         ),
       );

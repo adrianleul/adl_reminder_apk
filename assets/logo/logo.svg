@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 108 108" width="1024" height="1024">
+  <!-- ADL Reminder: an almost-closed countdown ring, a check, and one dot
+       marking the moment that's next. Ink on orange. -->
+  <rect width="108" height="108" rx="24" fill="#FF6A2B"/>
+  <g transform="translate(54 54) scale(1.3) translate(-54 -54)">
+    <path d="M54 30 A24 24 0 1 1 33.22 42" fill="none" stroke="#111318" stroke-width="7" stroke-linecap="round"/>
+    <path d="M44 55 L51.5 62.5 L65 47" fill="none" stroke="#111318" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
+    <circle cx="42" cy="33.22" r="4.5" fill="#FFFFFF"/>
+  </g>
+</svg>

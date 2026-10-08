@@ -1,7 +1,7 @@
 name: adl_reminder
-description: Android-first Flutter reminder application UI starter.
+description: Android-first reminder app with Ethiopian calendar support.
 publish_to: "none"
-version: 0.2.0+2
+version: 0.3.0+3
 
 environment:
   sdk: ">=3.10.0 <4.0.0"
@@ -28,3 +28,25 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+  fonts:
+    # SIL Open Font License; see assets/fonts/OFL-*.txt.
+    - family: SpaceGrotesk
+      fonts:
+        - asset: assets/fonts/space-grotesk-500.ttf
+          weight: 500
+        - asset: assets/fonts/space-grotesk-600.ttf
+          weight: 600
+        - asset: assets/fonts/space-grotesk-700.ttf
+          weight: 700
+    - family: DMSans
+      fonts:
+        - asset: assets/fonts/dm-sans-400.ttf
+          weight: 400
+        - asset: assets/fonts/dm-sans-500.ttf
+          weight: 500
+        - asset: assets/fonts/dm-sans-600.ttf
+          weight: 600
+        - asset: assets/fonts/dm-sans-700.ttf
+          weight: 700
+        - asset: assets/fonts/dm-sans-800.ttf
+          weight: 800

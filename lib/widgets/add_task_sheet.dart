@@ -3,14 +3,35 @@ import 'package:flutter/material.dart';
 import '../app_controller.dart';
 import '../l10n/app_localizations.dart';
 import '../models.dart';
+import '../theme.dart';
 import '../utils/calendar_utils.dart';
 import 'category_name_dialog.dart';
 import 'ethiopian_date_picker.dart';
+import 'ui.dart';
 
+/// How often a reminder repeats, as offered in the composer.
+enum Frequency { once, range, daily, weekly, monthly, yearly }
+
+Frequency frequencyOf(ReminderSchedule schedule) => switch (schedule.type) {
+  ReminderType.specificDate => Frequency.once,
+  ReminderType.dateRange => Frequency.range,
+  ReminderType.everyday => Frequency.daily,
+  ReminderType.custom => switch (schedule.recurrenceUnit) {
+    RecurrenceUnit.weekly || null => Frequency.weekly,
+    RecurrenceUnit.monthly => Frequency.monthly,
+    RecurrenceUnit.yearly => Frequency.yearly,
+  },
+};
+
+/// Creates a reminder, or edits [initialTask]. The top of the sheet reads as
+/// a sentence ("Remind me to … every month on day 5 at 8:30 with an alarm")
+/// whose underlined parts open the matching control. Pops with the resulting
+/// task; the caller saves it (after asking for notification permission).
 class AddTaskSheet extends StatefulWidget {
-  const AddTaskSheet({super.key, required this.controller});
+  const AddTaskSheet({super.key, required this.controller, this.initialTask});
 
   final AppController controller;
+  final ReminderTask? initialTask;
 
   @override
   State<AddTaskSheet> createState() => _AddTaskSheetState();
@@ -19,631 +40,676 @@ class AddTaskSheet extends StatefulWidget {
 class _AddTaskSheetState extends State<AddTaskSheet> {
   final _formKey = GlobalKey<FormState>();
   final _titleController = TextEditingController();
-  final List<TextEditingController> _subTaskControllers = [];
+  final _titleFocus = FocusNode();
+  final List<TextEditingController> _stepControllers = [];
+
+  /// Existing steps, parallel to [_stepControllers] (null = new).
+  final List<SubTask?> _existingSteps = [];
 
   String? _categoryId;
-  bool _multipleTasks = false;
-  ReminderType _reminderType = ReminderType.specificDate;
-  RecurrenceUnit _recurrenceUnit = RecurrenceUnit.weekly;
-  CalendarSystem _calendarSystem = CalendarSystem.ethiopian;
-  DateTime _gregorianDate = DateTime.now().add(const Duration(days: 1));
-  DateTime _gregorianEndDate = DateTime.now().add(const Duration(days: 2));
-  EthiopianDateValue _ethiopianDate = gregorianToEthiopian(
-    DateTime.now().add(const Duration(days: 1)),
-  );
-  EthiopianDateValue _ethiopianEndDate = gregorianToEthiopian(
-    DateTime.now().add(const Duration(days: 2)),
-  );
+  bool _withSteps = false;
+  Frequency _frequency = Frequency.once;
+  CalendarSystem _calendar = CalendarSystem.ethiopian;
+  DateTime _startDate = dateOnly(DateTime.now().add(const Duration(days: 1)));
+  DateTime _endDate = dateOnly(DateTime.now().add(const Duration(days: 2)));
   TimeOfDay _time = const TimeOfDay(hour: 9, minute: 0);
   final Set<int> _weekdays = <int>{DateTime.monday};
   ReminderDelivery _delivery = ReminderDelivery.notification;
 
+  bool get _isEditing => widget.initialTask != null;
+
   @override
   void initState() {
     super.initState();
-    final selectedId = widget.controller.selectedCategoryId;
+    _titleController.addListener(() => setState(() {}));
+    final controller = widget.controller;
+    final task = widget.initialTask;
+    if (task != null) {
+      final schedule = task.schedule;
+      _categoryId = task.categoryId;
+      _titleController.text = task.title;
+      _withSteps = task.subTasks.isNotEmpty;
+      for (final step in task.subTasks) {
+        _stepControllers.add(TextEditingController(text: step.title));
+        _existingSteps.add(step);
+      }
+      _frequency = frequencyOf(schedule);
+      _calendar = schedule.calendarSystem;
+      if (schedule.date != null) _startDate = dateOnly(schedule.date!);
+      _endDate = schedule.endDate != null
+          ? dateOnly(schedule.endDate!)
+          : _startDate;
+      _time = schedule.time;
+      if (schedule.weekdays.isNotEmpty) {
+        _weekdays
+          ..clear()
+          ..addAll(schedule.weekdays);
+      }
+      _delivery = schedule.delivery;
+      return;
+    }
+
+    final selectedId = controller.selectedCategoryId;
     _categoryId =
-        selectedId != null &&
-            selectedId != AppController.todayCategoryId &&
-            widget.controller.categories.any(
-              (category) => category.id == selectedId,
-            )
+        selectedId != null && controller.categoryById(selectedId) != null
         ? selectedId
-        : (widget.controller.categories.isNotEmpty
-              ? widget.controller.categories.first.id
+        : (controller.categories.isNotEmpty
+              ? controller.categories.first.id
               : null);
-    _calendarSystem = widget.controller.settings.defaultCalendar;
+    _calendar = controller.settings.defaultCalendar;
   }
 
   @override
   void dispose() {
     _titleController.dispose();
-    for (final controller in _subTaskControllers) {
+    _titleFocus.dispose();
+    for (final controller in _stepControllers) {
       controller.dispose();
     }
     super.dispose();
   }
 
+  ReminderSchedule _buildSchedule() {
+    final (type, unit) = switch (_frequency) {
+      Frequency.once => (ReminderType.specificDate, null),
+      Frequency.range => (ReminderType.dateRange, null),
+      Frequency.daily => (ReminderType.everyday, null),
+      Frequency.weekly => (ReminderType.custom, RecurrenceUnit.weekly),
+      Frequency.monthly => (ReminderType.custom, RecurrenceUnit.monthly),
+      Frequency.yearly => (ReminderType.custom, RecurrenceUnit.yearly),
+    };
+    return ReminderSchedule(
+      type: type,
+      calendarSystem: _calendar,
+      date: type == ReminderType.everyday ? null : _startDate,
+      endDate: type == ReminderType.dateRange ? _endDate : null,
+      time: _time,
+      recurrenceUnit: unit,
+      weekdays: unit == RecurrenceUnit.weekly
+          ? Set<int>.unmodifiable(_weekdays)
+          : const <int>{},
+      delivery: _delivery,
+    );
+  }
+
+  String _formatDate(DateTime date) =>
+      formatCalendarDate(context, date, _calendar);
+
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     final bottomInset = MediaQuery.viewInsetsOf(context).bottom;
-    return SafeArea(
-      top: false,
-      child: Padding(
-        padding: EdgeInsets.only(bottom: bottomInset),
-        child: DraggableScrollableSheet(
-          expand: false,
-          initialChildSize: 0.92,
-          minChildSize: 0.65,
-          maxChildSize: 0.96,
-          builder: (context, scrollController) {
-            return Material(
-              color: Theme.of(context).colorScheme.surface,
-              borderRadius: const BorderRadius.vertical(
-                top: Radius.circular(28),
-              ),
-              clipBehavior: Clip.antiAlias,
-              child: Form(
-                key: _formKey,
-                child: ListView(
-                  controller: scrollController,
-                  padding: const EdgeInsets.fromLTRB(20, 12, 20, 28),
-                  children: [
-                    Center(
-                      child: Container(
-                        width: 42,
-                        height: 4,
-                        decoration: BoxDecoration(
-                          color: Theme.of(context).colorScheme.onSurfaceVariant
-                              .withValues(alpha: 0.35),
-                          borderRadius: BorderRadius.circular(99),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 18),
-                    Row(
+    return Padding(
+      padding: EdgeInsets.only(bottom: bottomInset),
+      child: DraggableScrollableSheet(
+        expand: false,
+        initialChildSize: 0.94,
+        minChildSize: 0.6,
+        maxChildSize: 0.94,
+        builder: (context, scrollController) {
+          return Material(
+            color: AppColors.background,
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(32)),
+            clipBehavior: Clip.antiAlias,
+            child: Form(
+              key: _formKey,
+              child: Column(
+                children: [
+                  Expanded(
+                    child: ListView(
+                      controller: scrollController,
+                      padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
                       children: [
-                        Expanded(
-                          child: Text(
-                            context.l10n.text('createReminder'),
-                            style: Theme.of(context).textTheme.headlineSmall
-                                ?.copyWith(fontWeight: FontWeight.w700),
-                          ),
-                        ),
-                        IconButton(
-                          tooltip: context.l10n.text('close'),
-                          onPressed: () => Navigator.pop(context),
-                          icon: const Icon(Icons.close),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 18),
-                    _SectionTitle(
-                      number: 1,
-                      title: context.l10n.text('taskCategory'),
-                    ),
-                    const SizedBox(height: 10),
-                    Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Expanded(
-                          child: DropdownButtonFormField<String>(
-                            value: _categoryId,
-                            decoration: InputDecoration(
-                              labelText: context.l10n.text('category'),
-                              prefixIcon: const Icon(Icons.category_outlined),
-                            ),
-                            items: [
-                              for (final category
-                                  in widget.controller.categories)
-                                DropdownMenuItem(
-                                  value: category.id,
-                                  child: Row(
-                                    children: [
-                                      Icon(
-                                        category.icon,
-                                        size: 18,
-                                        color: category.color,
-                                      ),
-                                      const SizedBox(width: 8),
-                                      Text(category.name),
-                                    ],
-                                  ),
-                                ),
-                            ],
-                            validator: (value) => value == null
-                                ? context.l10n.text('selectCategory')
-                                : null,
-                            onChanged: (value) =>
-                                setState(() => _categoryId = value),
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        IconButton.filledTonal(
-                          tooltip: context.l10n.text('addCategory'),
-                          onPressed: _addCategory,
-                          icon: const Icon(Icons.add),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 24),
-                    _SectionTitle(
-                      number: 2,
-                      title: context.l10n.text('whatToDo'),
-                    ),
-                    const SizedBox(height: 10),
-                    TextFormField(
-                      controller: _titleController,
-                      textCapitalization: TextCapitalization.sentences,
-                      decoration: InputDecoration(
-                        labelText: context.l10n.text('taskTitle'),
-                        hintText: context.l10n.text('taskExample'),
-                        prefixIcon: const Icon(Icons.edit_note_outlined),
-                      ),
-                      validator: (value) {
-                        if (value == null || value.trim().isEmpty) {
-                          return context.l10n.text('enterTask');
-                        }
-                        return null;
-                      },
-                    ),
-                    const SizedBox(height: 8),
-                    CheckboxListTile(
-                      contentPadding: EdgeInsets.zero,
-                      controlAffinity: ListTileControlAffinity.leading,
-                      title: Text(context.l10n.text('multipleTasks')),
-                      subtitle: Text(context.l10n.text('multipleTasksHelp')),
-                      value: _multipleTasks,
-                      onChanged: (value) {
-                        setState(() {
-                          _multipleTasks = value ?? false;
-                          if (_multipleTasks && _subTaskControllers.isEmpty) {
-                            _subTaskControllers.addAll([
-                              TextEditingController(),
-                              TextEditingController(),
-                            ]);
-                          }
-                        });
-                      },
-                    ),
-                    if (_multipleTasks) ...[
-                      const SizedBox(height: 4),
-                      for (
-                        int index = 0;
-                        index < _subTaskControllers.length;
-                        index++
-                      )
-                        Padding(
-                          padding: const EdgeInsets.only(bottom: 10),
-                          child: TextFormField(
-                            controller: _subTaskControllers[index],
-                            textCapitalization: TextCapitalization.sentences,
-                            decoration: InputDecoration(
-                              labelText: context.l10n.text('subtask', {
-                                'count': index + 1,
-                              }),
-                              prefixIcon: const Icon(
-                                Icons.subdirectory_arrow_right,
-                              ),
-                              suffixIcon: _subTaskControllers.length > 2
-                                  ? IconButton(
-                                      tooltip: context.l10n.text(
-                                        'removeSubtask',
-                                      ),
-                                      onPressed: () => _removeSubTask(index),
-                                      icon: const Icon(
-                                        Icons.remove_circle_outline,
-                                      ),
-                                    )
-                                  : null,
-                            ),
-                            validator: (value) {
-                              if (_multipleTasks &&
-                                  (value == null || value.trim().isEmpty)) {
-                                return context.l10n.text('enterSubtask');
-                              }
-                              return null;
-                            },
-                          ),
-                        ),
-                      Align(
-                        alignment: Alignment.centerLeft,
-                        child: TextButton.icon(
-                          onPressed: () => setState(
-                            () => _subTaskControllers.add(
-                              TextEditingController(),
+                        Center(
+                          child: Container(
+                            width: 40,
+                            height: 4,
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFD4D6DC),
+                              borderRadius: BorderRadius.circular(2),
                             ),
                           ),
-                          icon: const Icon(Icons.add),
-                          label: Text(context.l10n.text('addSubtask')),
                         ),
-                      ),
-                    ],
-                    const SizedBox(height: 24),
-                    _SectionTitle(
-                      number: 3,
-                      title: context.l10n.text('reminderType'),
-                    ),
-                    const SizedBox(height: 10),
-                    DropdownButtonFormField<ReminderType>(
-                      value: _reminderType,
-                      isExpanded: true,
-                      decoration: InputDecoration(
-                        labelText: context.l10n.text('repeatSchedule'),
-                        prefixIcon: const Icon(Icons.repeat),
-                      ),
-                      items: [
-                        DropdownMenuItem(
-                          value: ReminderType.specificDate,
-                          child: Text(context.l10n.text('specificDate')),
-                        ),
-                        DropdownMenuItem(
-                          value: ReminderType.dateRange,
-                          child: Text(
-                            context.l10n.text('dateRange'),
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                        DropdownMenuItem(
-                          value: ReminderType.everyday,
-                          child: Text(context.l10n.text('everyDay')),
-                        ),
-                        DropdownMenuItem(
-                          value: ReminderType.custom,
-                          child: Text(context.l10n.text('customRepeat')),
-                        ),
-                      ],
-                      selectedItemBuilder: (context) => [
-                        Text(context.l10n.text('specificDate')),
-                        Text(context.l10n.text('dateRange')),
-                        Text(context.l10n.text('everyDay')),
-                        Text(
-                          context.l10n.text('customRecurrence'),
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ],
-                      onChanged: (value) => setState(
-                        () => _reminderType = value ?? _reminderType,
-                      ),
-                    ),
-                    if (_reminderType == ReminderType.custom) ...[
-                      const SizedBox(height: 12),
-                      Wrap(
-                        spacing: 8,
-                        runSpacing: 8,
-                        children: [
-                          for (final unit in RecurrenceUnit.values)
-                            ChoiceChip(
-                              label: Text(switch (unit) {
-                                RecurrenceUnit.weekly => context.l10n.text(
-                                  'weekly',
-                                ),
-                                RecurrenceUnit.monthly => context.l10n.text(
-                                  'monthly',
-                                ),
-                                RecurrenceUnit.yearly => context.l10n.text(
-                                  'yearly',
-                                ),
-                              }),
-                              selected: _recurrenceUnit == unit,
-                              onSelected: (_) =>
-                                  setState(() => _recurrenceUnit = unit),
-                            ),
-                        ],
-                      ),
-                      if (_recurrenceUnit == RecurrenceUnit.weekly) ...[
                         const SizedBox(height: 12),
-                        Wrap(
-                          spacing: 6,
+                        Row(
                           children: [
-                            for (final entry in const <int, String>{
-                              DateTime.monday: 'M',
-                              DateTime.tuesday: 'T',
-                              DateTime.wednesday: 'W',
-                              DateTime.thursday: 'T',
-                              DateTime.friday: 'F',
-                              DateTime.saturday: 'S',
-                              DateTime.sunday: 'S',
-                            }.entries)
-                              FilterChip(
-                                label: Text(entry.value),
-                                selected: _weekdays.contains(entry.key),
-                                onSelected: (selected) {
-                                  setState(() {
-                                    if (selected) {
-                                      _weekdays.add(entry.key);
-                                    } else if (_weekdays.length > 1) {
-                                      _weekdays.remove(entry.key);
-                                    }
-                                  });
-                                },
+                            Expanded(
+                              child: Text(
+                                l10n.text(_isEditing ? 'editTask' : 'newTask'),
+                                style: displayStyle(22),
                               ),
+                            ),
+                            SquareIconButton(
+                              icon: Icons.close,
+                              tooltip: l10n.text('close'),
+                              onPressed: () => Navigator.pop(context),
+                            ),
                           ],
                         ),
+                        const SizedBox(height: 16),
+                        _buildSentence(context),
+                        const SizedBox(height: 24),
+                        ..._buildControls(context),
                       ],
-                    ],
-                    const SizedBox(height: 24),
-                    _SectionTitle(
-                      number: 4,
-                      title: context.l10n.text('notificationDateTime'),
                     ),
-                    const SizedBox(height: 10),
-                    SegmentedButton<CalendarSystem>(
-                      segments: [
-                        ButtonSegment(
-                          value: CalendarSystem.ethiopian,
-                          icon: const Icon(Icons.calendar_month_outlined),
-                          label: Text(context.l10n.text('ethiopian')),
-                        ),
-                        ButtonSegment(
-                          value: CalendarSystem.gregorian,
-                          icon: const Icon(Icons.event_outlined),
-                          label: Text(context.l10n.text('gregorian')),
-                        ),
-                      ],
-                      selected: <CalendarSystem>{_calendarSystem},
-                      onSelectionChanged: (value) {
-                        setState(() => _calendarSystem = value.first);
-                      },
-                    ),
-                    const SizedBox(height: 12),
-                    if (_reminderType != ReminderType.everyday) ...[
-                      if (_reminderType == ReminderType.dateRange)
-                        _buildDateRangeSelection(context)
-                      else
-                        _buildDateTile(context, isEnd: false),
-                    ],
-                    const SizedBox(height: 10),
-                    ListTile(
-                      contentPadding: const EdgeInsets.symmetric(
-                        horizontal: 12,
-                      ),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(14),
-                        side: BorderSide(
-                          color: Theme.of(context).colorScheme.outlineVariant,
-                        ),
-                      ),
-                      leading: const Icon(Icons.schedule),
-                      title: Text(
-                        MaterialLocalizations.of(
-                          context,
-                        ).formatTimeOfDay(_time),
-                      ),
-                      subtitle: Text(context.l10n.text('reminderTime')),
-                      trailing: const Icon(Icons.edit_outlined),
-                      onTap: _pickTime,
-                    ),
-                    const SizedBox(height: 8),
-                    Align(
-                      alignment: Alignment.centerLeft,
-                      child: Text(
-                        context.l10n.text('deliveryType'),
-                        style: Theme.of(context).textTheme.titleSmall,
-                      ),
-                    ),
-                    const SizedBox(height: 6),
-                    SegmentedButton<ReminderDelivery>(
-                      segments: [
-                        ButtonSegment(
-                          value: ReminderDelivery.notification,
-                          icon: const Icon(Icons.notifications_outlined),
-                          label: Text(context.l10n.text('notification')),
-                        ),
-                        ButtonSegment(
-                          value: ReminderDelivery.alarm,
-                          icon: const Icon(Icons.alarm_outlined),
-                          label: Text(context.l10n.text('alarm')),
-                        ),
-                      ],
-                      selected: {_delivery},
-                      onSelectionChanged: (value) =>
-                          setState(() => _delivery = value.first),
-                    ),
-                    const SizedBox(height: 6),
-                    Text(
-                      context.l10n.text(
-                        _delivery == ReminderDelivery.alarm
-                            ? 'alarmDeliveryHelp'
-                            : 'notificationDeliveryHelp',
-                      ),
-                      style: Theme.of(context).textTheme.bodySmall,
-                    ),
-                    const SizedBox(height: 24),
-                    FilledButton.icon(
-                      onPressed: _saveTask,
-                      icon: const Icon(Icons.add_task),
-                      label: Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 14),
-                        child: Text(context.l10n.text('createReminder')),
-                      ),
-                    ),
-                  ],
-                ),
+                  ),
+                  _buildFooter(context),
+                ],
               ),
-            );
-          },
-        ),
+            ),
+          );
+        },
       ),
     );
   }
 
-  Widget _buildDateTile(BuildContext context, {required bool isEnd}) {
-    final gregorian = isEnd ? _gregorianEndDate : _gregorianDate;
-    final ethiopian = isEnd ? _ethiopianEndDate : _ethiopianDate;
-    return ListTile(
-      contentPadding: const EdgeInsets.symmetric(horizontal: 12),
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(14),
-        side: BorderSide(color: Theme.of(context).colorScheme.outlineVariant),
+  // ---------------------------------------------------------------------------
+  // The sentence
+
+  Widget _buildSentence(BuildContext context) {
+    final l10n = context.l10n;
+    final material = MaterialLocalizations.of(context);
+    final title = _titleController.text.trim();
+    final slots = <String, (String, VoidCallback?)>{
+      'title': (
+        title.isEmpty ? l10n.text('titlePlaceholder') : title,
+        _titleFocus.requestFocus,
       ),
-      leading: Icon(
-        isEnd ? Icons.event_available_outlined : Icons.calendar_today_outlined,
+      'date': (_formatDate(_startDate), () => _pickDate(isEnd: false)),
+      'start': (_formatDate(_startDate), () => _pickDate(isEnd: false)),
+      'end': (_formatDate(_endDate), () => _pickDate(isEnd: true)),
+      'day': (
+        '${_calendar == CalendarSystem.ethiopian ? gregorianToEthiopian(_startDate).day : _startDate.day}',
+        () => _pickDate(isEnd: false),
       ),
-      title: Text(
-        _calendarSystem == CalendarSystem.ethiopian
-            ? '${ethiopianMonthNames[ethiopian.month - 1]} '
-                  '${ethiopian.day}, ${ethiopian.year} EC'
-            : MaterialLocalizations.of(context).formatMediumDate(gregorian),
+      'days': (
+        [
+          for (final day in weekdayDisplayOrder)
+            if (_weekdays.contains(day)) weekdayName(l10n, day),
+        ].join(', '),
+        null,
       ),
-      subtitle: Text(
-        _reminderType == ReminderType.dateRange
-            ? context.l10n.text(isEnd ? 'endDate' : 'startDate')
-            : (_calendarSystem == CalendarSystem.ethiopian
-                  ? 'Gregorian: ${MaterialLocalizations.of(context).formatMediumDate(ethiopianToGregorian(ethiopian))}'
-                  : context.l10n.text('gregorianCalendar')),
+      'time': (material.formatTimeOfDay(_time), _pickTime),
+      'delivery': (
+        l10n.text(
+          _delivery == ReminderDelivery.alarm
+              ? 'deliveryAlarmPhrase'
+              : 'deliveryNotificationPhrase',
+        ),
+        () => setState(
+          () => _delivery = _delivery == ReminderDelivery.alarm
+              ? ReminderDelivery.notification
+              : ReminderDelivery.alarm,
+        ),
       ),
-      trailing: const Icon(Icons.edit_calendar_outlined),
+    };
+    if (_frequency == Frequency.yearly) {
+      slots['date'] = (
+        _calendar == CalendarSystem.ethiopian
+            ? '${ethiopianMonthName(l10n, gregorianToEthiopian(_startDate).month)} '
+                  '${gregorianToEthiopian(_startDate).day}'
+            : material.formatShortMonthDay(_startDate),
+        () => _pickDate(isEnd: false),
+      );
+    }
+
+    final template = l10n.text(switch (_frequency) {
+      Frequency.once => 'sentenceOnce',
+      Frequency.range => 'sentenceRange',
+      Frequency.daily => 'sentenceDaily',
+      Frequency.weekly => 'sentenceWeekly',
+      Frequency.monthly => 'sentenceMonthly',
+      Frequency.yearly => 'sentenceYearly',
+    });
+
+    final plain = displayStyle(
+      26,
+      weight: FontWeight.w600,
+      color: AppColors.muted,
+    ).copyWith(height: 1.3);
+    final children = <Widget>[];
+    var last = 0;
+    for (final match in RegExp(r'\{(\w+)\}').allMatches(template)) {
+      for (final word in template.substring(last, match.start).split(' ')) {
+        if (word.isNotEmpty) children.add(Text(word, style: plain));
+      }
+      final slot = slots[match.group(1)];
+      if (slot != null) {
+        children.add(_SentenceSlot(text: slot.$1, onTap: slot.$2));
+      }
+      last = match.end;
+    }
+    for (final word in template.substring(last).split(' ')) {
+      if (word.isNotEmpty) children.add(Text(word, style: plain));
+    }
+    return Wrap(
+      spacing: 7,
+      runSpacing: 6,
+      crossAxisAlignment: WrapCrossAlignment.end,
+      children: children,
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // Controls
+
+  List<Widget> _buildControls(BuildContext context) {
+    final l10n = context.l10n;
+    return [
+      TextFormField(
+        controller: _titleController,
+        focusNode: _titleFocus,
+        textCapitalization: TextCapitalization.sentences,
+        decoration: InputDecoration(
+          labelText: l10n.text('taskTitle'),
+          hintText: l10n.text('taskExample'),
+        ),
+        validator: (value) => value == null || value.trim().isEmpty
+            ? l10n.text('enterTask')
+            : null,
+      ),
+      const SizedBox(height: 22),
+      SectionLabel(l10n.text('howOften')),
+      const SizedBox(height: 10),
+      PillGroup<Frequency>(
+        options: [
+          PillOption(Frequency.once, l10n.text('oneTime')),
+          PillOption(Frequency.range, l10n.text('dateRange')),
+          PillOption(Frequency.daily, l10n.text('daily')),
+          PillOption(Frequency.weekly, l10n.text('weekly')),
+          PillOption(Frequency.monthly, l10n.text('monthly')),
+          PillOption(Frequency.yearly, l10n.text('yearly')),
+        ],
+        selected: _frequency,
+        onSelected: (value) => setState(() => _frequency = value),
+      ),
+      if (_frequency == Frequency.weekly) ...[
+        const SizedBox(height: 12),
+        Wrap(
+          spacing: 6,
+          runSpacing: 6,
+          children: [
+            for (final day in weekdayDisplayOrder)
+              FilterChip(
+                label: Text(weekdayName(l10n, day)),
+                selected: _weekdays.contains(day),
+                onSelected: (selected) => setState(() {
+                  if (selected) {
+                    _weekdays.add(day);
+                  } else if (_weekdays.length > 1) {
+                    _weekdays.remove(day);
+                  }
+                }),
+              ),
+          ],
+        ),
+      ],
+      const SizedBox(height: 22),
+      Row(
+        children: [
+          Expanded(child: SectionLabel(l10n.text('notificationDateTime'))),
+          SizedBox(
+            width: 180,
+            child: PillGroup<CalendarSystem>(
+              expand: true,
+              options: [
+                PillOption(CalendarSystem.ethiopian, l10n.text('ethiopian')),
+                PillOption(CalendarSystem.gregorian, l10n.text('gregorian')),
+              ],
+              selected: _calendar,
+              onSelected: (value) => setState(() => _calendar = value),
+            ),
+          ),
+        ],
+      ),
+      const SizedBox(height: 10),
+      if (_frequency == Frequency.range)
+        Row(
+          children: [
+            Expanded(
+              child: _dateTile(context, label: 'startDate', isEnd: false),
+            ),
+            const SizedBox(width: 8),
+            Expanded(child: _dateTile(context, label: 'endDate', isEnd: true)),
+          ],
+        )
+      else
+        Row(
+          children: [
+            if (_frequency != Frequency.daily) ...[
+              Expanded(
+                child: _dateTile(
+                  context,
+                  label: _frequency == Frequency.once
+                      ? 'dateLabel'
+                      : 'startsOn',
+                  isEnd: false,
+                ),
+              ),
+              const SizedBox(width: 8),
+            ],
+            Expanded(child: _timeTile(context)),
+          ],
+        ),
+      if (_frequency == Frequency.range) ...[
+        const SizedBox(height: 8),
+        _timeTile(context),
+      ],
+      const SizedBox(height: 22),
+      SectionLabel(l10n.text('deliveryType')),
+      const SizedBox(height: 10),
+      PillGroup<ReminderDelivery>(
+        expand: true,
+        options: [
+          PillOption(
+            ReminderDelivery.notification,
+            l10n.text('notification'),
+            icon: Icons.notifications_none,
+          ),
+          PillOption(
+            ReminderDelivery.alarm,
+            l10n.text('alarm'),
+            icon: Icons.alarm,
+          ),
+        ],
+        selected: _delivery,
+        onSelected: (value) => setState(() => _delivery = value),
+      ),
+      const SizedBox(height: 6),
+      Text(
+        l10n.text(
+          _delivery == ReminderDelivery.alarm
+              ? 'alarmDeliveryHelp'
+              : 'notificationDeliveryHelp',
+        ),
+        style: const TextStyle(fontSize: 12, color: AppColors.muted),
+      ),
+      const SizedBox(height: 22),
+      SectionLabel(l10n.text('category')),
+      const SizedBox(height: 10),
+      FormField<String>(
+        initialValue: _categoryId,
+        validator: (_) =>
+            _categoryId == null ? l10n.text('selectCategory') : null,
+        builder: (field) => Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Wrap(
+              spacing: 6,
+              runSpacing: 6,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
+                PillGroup<String?>(
+                  options: [
+                    for (final category in widget.controller.categories)
+                      PillOption(category.id, category.name),
+                  ],
+                  selected: _categoryId,
+                  onSelected: (value) {
+                    setState(() => _categoryId = value);
+                    field.didChange(value);
+                  },
+                ),
+                IconButton(
+                  tooltip: l10n.text('addCategory'),
+                  onPressed: () async {
+                    await _addCategory();
+                    field.didChange(_categoryId);
+                  },
+                  icon: const Icon(Icons.add, size: 20),
+                  style: IconButton.styleFrom(
+                    fixedSize: const Size(44, 44),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      side: const BorderSide(color: AppColors.line, width: 1.5),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            if (field.hasError)
+              Padding(
+                padding: const EdgeInsets.only(top: 6),
+                child: Text(
+                  field.errorText!,
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Theme.of(context).colorScheme.error,
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
+      const SizedBox(height: 16),
+      CheckboxListTile(
+        contentPadding: EdgeInsets.zero,
+        controlAffinity: ListTileControlAffinity.leading,
+        title: Text(
+          l10n.text('multipleTasks'),
+          style: const TextStyle(fontWeight: FontWeight.w700),
+        ),
+        subtitle: Text(l10n.text('multipleTasksHelp')),
+        value: _withSteps,
+        onChanged: (value) => setState(() {
+          _withSteps = value ?? false;
+          while (_withSteps && _stepControllers.length < 2) {
+            _stepControllers.add(TextEditingController());
+            _existingSteps.add(null);
+          }
+        }),
+      ),
+      if (_withSteps) ...[
+        for (var index = 0; index < _stepControllers.length; index++)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: TextFormField(
+              controller: _stepControllers[index],
+              textCapitalization: TextCapitalization.sentences,
+              decoration: InputDecoration(
+                labelText: l10n.text('subtask', {'count': index + 1}),
+                suffixIcon: _stepControllers.length > 2
+                    ? IconButton(
+                        tooltip: l10n.text('removeSubtask'),
+                        onPressed: () => _removeStep(index),
+                        icon: const Icon(Icons.remove_circle_outline),
+                      )
+                    : null,
+              ),
+              validator: (value) =>
+                  _withSteps && (value == null || value.trim().isEmpty)
+                  ? l10n.text('enterSubtask')
+                  : null,
+            ),
+          ),
+        Align(
+          alignment: Alignment.centerLeft,
+          child: TextButton.icon(
+            onPressed: () => setState(() {
+              _stepControllers.add(TextEditingController());
+              _existingSteps.add(null);
+            }),
+            icon: const Icon(Icons.add),
+            label: Text(l10n.text('addSubtask')),
+          ),
+        ),
+      ],
+    ];
+  }
+
+  Widget _dateTile(
+    BuildContext context, {
+    required String label,
+    required bool isEnd,
+  }) {
+    final date = isEnd ? _endDate : _startDate;
+    final other = _calendar == CalendarSystem.ethiopian
+        ? MaterialLocalizations.of(context).formatMediumDate(date)
+        : formatEthiopianDate(context.l10n, gregorianToEthiopian(date));
+    return _PickerTile(
+      icon: Icons.calendar_today_outlined,
+      label: context.l10n.text(label),
+      value: _formatDate(date),
+      detail: other,
       onTap: () => _pickDate(isEnd: isEnd),
     );
   }
 
-  Widget _buildDateRangeSelection(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return Material(
-      color: scheme.primaryContainer.withValues(alpha: 0.45),
-      shape: RoundedRectangleBorder(
-        side: BorderSide(color: scheme.primary, width: 1.5),
-        borderRadius: BorderRadius.circular(18),
+  Widget _timeTile(BuildContext context) {
+    return _PickerTile(
+      icon: Icons.schedule,
+      label: context.l10n.text('reminderTime'),
+      value: MaterialLocalizations.of(context).formatTimeOfDay(_time),
+      onTap: _pickTime,
+    );
+  }
+
+  Widget _buildFooter(BuildContext context) {
+    final l10n = context.l10n;
+    final now = DateTime.now();
+    final next = _buildSchedule().nextOccurrenceAfter(now);
+    final String headline;
+    final String detail;
+    if (next == null) {
+      headline = l10n.text('timeAlreadyPassed');
+      detail = l10n.text('chooseAnotherTime');
+    } else {
+      headline = l10n.text('firstReminder', {
+        'date':
+            '${formatCalendarDate(context, next, _calendar)} · '
+            '${MaterialLocalizations.of(context).formatTimeOfDay(TimeOfDay.fromDateTime(next))}',
+      });
+      detail = l10n.text(
+        _delivery == ReminderDelivery.alarm ? 'alarmIn' : 'reminderIn',
+        {'time': formatTimeUntil(l10n, next.difference(now))},
+      );
+    }
+    return Container(
+      padding: const EdgeInsets.fromLTRB(20, 12, 20, 16),
+      decoration: const BoxDecoration(
+        color: AppColors.background,
+        border: Border(top: BorderSide(color: AppColors.surface)),
       ),
-      clipBehavior: Clip.antiAlias,
-      child: Padding(
-        padding: const EdgeInsets.all(8),
+      child: SafeArea(
+        top: false,
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
           children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(8, 4, 8, 8),
+            Container(
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: next == null ? AppColors.missedFill : AppColors.surface,
+                borderRadius: BorderRadius.circular(18),
+              ),
               child: Row(
                 children: [
-                  Icon(Icons.date_range_outlined, color: scheme.primary),
-                  const SizedBox(width: 8),
-                  Text(
-                    context.l10n.text('selectedDateRange'),
-                    style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                      color: scheme.primary,
-                      fontWeight: FontWeight.w700,
+                  Icon(
+                    _delivery == ReminderDelivery.alarm
+                        ? Icons.alarm
+                        : Icons.notifications_none,
+                    color: next == null ? AppColors.missed : AppColors.ink,
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          headline,
+                          style: const TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        Text(
+                          detail,
+                          style: const TextStyle(
+                            fontSize: 13,
+                            color: AppColors.muted,
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                 ],
               ),
             ),
-            _buildDateTile(context, isEnd: false),
-            Padding(
-              padding: const EdgeInsets.only(left: 31),
-              child: Container(width: 2, height: 10, color: scheme.primary),
+            const SizedBox(height: 10),
+            FilledButton(
+              style: FilledButton.styleFrom(
+                backgroundColor: AppColors.accent,
+                foregroundColor: AppColors.ink,
+                minimumSize: const Size.fromHeight(58),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                textStyle: const TextStyle(
+                  fontFamily: bodyFont,
+                  fontSize: 17,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              onPressed: _saveTask,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(l10n.text(_isEditing ? 'saveChanges' : 'setReminder')),
+                  const SizedBox(width: 8),
+                  const Icon(Icons.arrow_forward),
+                ],
+              ),
             ),
-            _buildDateTile(context, isEnd: true),
           ],
         ),
       ),
     );
   }
 
+  // ---------------------------------------------------------------------------
+  // Pickers and saving
+
+  void _setStart(DateTime value) {
+    _startDate = dateOnly(value);
+    if (_endDate.isBefore(_startDate)) _endDate = _startDate;
+  }
+
+  void _setEnd(DateTime value) {
+    final end = dateOnly(value);
+    _endDate = end.isBefore(_startDate) ? _startDate : end;
+  }
+
   Future<void> _pickDate({required bool isEnd}) async {
-    if (_calendarSystem == CalendarSystem.gregorian) {
-      if (_reminderType == ReminderType.dateRange) {
-        final selected = await showDateRangePicker(
-          context: context,
-          initialDateRange: DateTimeRange(
-            start: _gregorianDate,
-            end: _gregorianEndDate,
-          ),
-          firstDate: DateTime.now().subtract(const Duration(days: 365)),
-          lastDate: DateTime.now().add(const Duration(days: 3650)),
-        );
-        if (selected != null && mounted) {
-          setState(() {
-            _gregorianDate = selected.start;
-            _gregorianEndDate = selected.end;
-            _ethiopianDate = gregorianToEthiopian(selected.start);
-            _ethiopianEndDate = gregorianToEthiopian(selected.end);
-          });
-        }
-        return;
-      }
+    final today = dateOnly(DateTime.now());
+    if (_calendar == CalendarSystem.gregorian) {
+      final initial = isEnd ? _endDate : _startDate;
+      final first = isEnd
+          ? _startDate
+          : today.subtract(const Duration(days: 365));
       final selected = await showDatePicker(
         context: context,
-        initialDate: isEnd ? _gregorianEndDate : _gregorianDate,
-        firstDate: _reminderType == ReminderType.specificDate
-            ? DateUtils.dateOnly(DateTime.now())
-            : DateTime.now().subtract(const Duration(days: 365)),
-        lastDate: DateTime.now().add(const Duration(days: 3650)),
+        initialDate: initial.isBefore(first) ? first : initial,
+        firstDate: first,
+        lastDate: today.add(const Duration(days: 3650)),
       );
       if (selected != null && mounted) {
-        setState(() {
-          if (isEnd) {
-            _gregorianEndDate = selected.isBefore(_gregorianDate)
-                ? _gregorianDate
-                : selected;
-            _ethiopianEndDate = gregorianToEthiopian(_gregorianEndDate);
-          } else {
-            _gregorianDate = selected;
-            _ethiopianDate = gregorianToEthiopian(selected);
-            if (_gregorianEndDate.isBefore(selected)) {
-              _gregorianEndDate = selected;
-              _ethiopianEndDate = gregorianToEthiopian(selected);
-            }
-          }
-        });
+        setState(() => isEnd ? _setEnd(selected) : _setStart(selected));
       }
       return;
     }
 
     final selected = await showEthiopianDatePickerDialog(
       context: context,
-      initialDate: isEnd ? _ethiopianEndDate : _ethiopianDate,
+      initialDate: gregorianToEthiopian(isEnd ? _endDate : _startDate),
     );
     if (selected != null && mounted) {
       final gregorian = ethiopianToGregorian(selected);
-      if (_reminderType == ReminderType.specificDate &&
-          gregorian.isBefore(DateUtils.dateOnly(DateTime.now()))) {
-        await _showPastTimeDialog(
-          DateTime(
-            gregorian.year,
-            gregorian.month,
-            gregorian.day,
-            _time.hour,
-            _time.minute,
-          ),
-        );
-        return;
-      }
-      setState(() {
-        if (isEnd) {
-          _gregorianEndDate = gregorian.isBefore(_gregorianDate)
-              ? _gregorianDate
-              : gregorian;
-          _ethiopianEndDate = gregorianToEthiopian(_gregorianEndDate);
-        } else {
-          _ethiopianDate = selected;
-          _gregorianDate = gregorian;
-          if (_gregorianEndDate.isBefore(gregorian)) {
-            _gregorianEndDate = gregorian;
-            _ethiopianEndDate = selected;
-          }
-        }
-      });
+      setState(() => isEnd ? _setEnd(gregorian) : _setStart(gregorian));
     }
   }
 
   Future<void> _pickTime() async {
     final selected = await showTimePicker(context: context, initialTime: _time);
-    if (selected != null && mounted) {
-      final scheduledAt = DateTime(
-        _gregorianDate.year,
-        _gregorianDate.month,
-        _gregorianDate.day,
-        selected.hour,
-        selected.minute,
-      );
-      if (_reminderType == ReminderType.specificDate &&
-          !scheduledAt.isAfter(DateTime.now())) {
-        await _showPastTimeDialog(scheduledAt);
-        return;
-      }
-      setState(() => _time = selected);
-    }
+    if (selected != null && mounted) setState(() => _time = selected);
   }
 
   Future<void> _showPastTimeDialog(DateTime scheduledAt) {
@@ -655,7 +721,7 @@ class _AddTaskSheetState extends State<AddTaskSheet> {
         title: Text(context.l10n.text('timeAlreadyPassed')),
         content: Text(
           context.l10n.text('chooseFutureDateTime', {
-            'date': localizations.formatMediumDate(scheduledAt),
+            'date': _formatDate(scheduledAt),
             'time': localizations.formatTimeOfDay(
               TimeOfDay.fromDateTime(scheduledAt),
             ),
@@ -678,121 +744,161 @@ class _AddTaskSheetState extends State<AddTaskSheet> {
         title: context.l10n.text('newCategory'),
         actionLabel: context.l10n.text('add'),
         hintText: context.l10n.text('financeExample'),
+        nameExists: widget.controller.categoryNameExists,
       ),
     );
-
     if (name != null && name.trim().isNotEmpty && mounted) {
       final category = widget.controller.addCategory(name);
       setState(() => _categoryId = category.id);
     }
   }
 
-  void _removeSubTask(int index) {
-    final controller = _subTaskControllers.removeAt(index);
-    controller.dispose();
+  void _removeStep(int index) {
+    _stepControllers.removeAt(index).dispose();
+    _existingSteps.removeAt(index);
     setState(() {});
   }
 
   Future<void> _saveTask() async {
     if (!_formKey.currentState!.validate()) return;
 
-    final date = _reminderType == ReminderType.everyday
-        ? null
-        : DateTime(
-            _gregorianDate.year,
-            _gregorianDate.month,
-            _gregorianDate.day,
-          );
-
-    if (_reminderType == ReminderType.specificDate && date != null) {
-      final scheduledAt = DateTime(
-        date.year,
-        date.month,
-        date.day,
-        _time.hour,
-        _time.minute,
-      );
-      if (!scheduledAt.isAfter(DateTime.now())) {
+    final schedule = _buildSchedule();
+    if (_frequency == Frequency.once) {
+      final scheduledAt = schedule.firstOccurrence!;
+      // Renaming an overdue task should not force a new date.
+      final unchanged =
+          widget.initialTask?.schedule.type == ReminderType.specificDate &&
+          widget.initialTask?.schedule.firstOccurrence == scheduledAt;
+      if (!unchanged && !scheduledAt.isAfter(DateTime.now())) {
         await _showPastTimeDialog(scheduledAt);
         return;
       }
     }
 
-    final task = ReminderTask(
-      id: 'task-${DateTime.now().microsecondsSinceEpoch}',
-      categoryId: _categoryId!,
-      title: _titleController.text.trim(),
-      schedule: ReminderSchedule(
-        type: _reminderType,
-        calendarSystem: _calendarSystem,
-        date: date,
-        endDate: _reminderType == ReminderType.dateRange
-            ? _gregorianEndDate
-            : null,
-        ethiopianDate: _calendarSystem == CalendarSystem.ethiopian
-            ? _ethiopianDate
-            : null,
-        ethiopianEndDate:
-            _calendarSystem == CalendarSystem.ethiopian &&
-                _reminderType == ReminderType.dateRange
-            ? _ethiopianEndDate
-            : null,
-        time: _time,
-        recurrenceUnit: _reminderType == ReminderType.custom
-            ? _recurrenceUnit
-            : null,
-        weekdays:
-            _reminderType == ReminderType.custom &&
-                _recurrenceUnit == RecurrenceUnit.weekly
-            ? Set<int>.unmodifiable(_weekdays)
-            : const <int>{},
-        delivery: _delivery,
-      ),
-      subTasks: _multipleTasks
-          ? [
-              for (final controller in _subTaskControllers)
-                SubTask(
-                  id: 'sub-${DateTime.now().microsecondsSinceEpoch}-${controller.hashCode}',
-                  title: controller.text.trim(),
-                ),
-            ]
-          : const <SubTask>[],
-    );
+    final stamp = DateTime.now().microsecondsSinceEpoch;
+    final steps = <SubTask>[
+      if (_withSteps)
+        for (var index = 0; index < _stepControllers.length; index++)
+          _existingSteps[index]?.copyWith(
+                title: _stepControllers[index].text.trim(),
+              ) ??
+              SubTask(
+                id: 'sub-$stamp-$index',
+                title: _stepControllers[index].text.trim(),
+              ),
+    ];
 
-    widget.controller.addTask(task);
-    Navigator.pop(context, task);
+    final original = widget.initialTask;
+    final task = original == null
+        ? ReminderTask(
+            id: 'task-$stamp',
+            categoryId: _categoryId!,
+            title: _titleController.text.trim(),
+            schedule: schedule,
+            subTasks: steps,
+          )
+        : original.copyWith(
+            categoryId: _categoryId,
+            title: _titleController.text.trim(),
+            schedule: schedule,
+            subTasks: steps,
+          );
+
+    if (mounted) Navigator.pop(context, task);
   }
 }
 
-class _SectionTitle extends StatelessWidget {
-  const _SectionTitle({required this.number, required this.title});
+/// An underlined, tappable part of the composer sentence.
+class _SentenceSlot extends StatelessWidget {
+  const _SentenceSlot({required this.text, this.onTap});
 
-  final int number;
-  final String title;
+  final String text;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      children: [
-        CircleAvatar(
-          radius: 15,
-          backgroundColor: Theme.of(context).colorScheme.primaryContainer,
-          child: Text(
-            '$number',
-            style: TextStyle(
-              color: Theme.of(context).colorScheme.onPrimaryContainer,
-              fontWeight: FontWeight.w700,
-            ),
+    final label = Container(
+      padding: const EdgeInsets.only(bottom: 1),
+      decoration: const BoxDecoration(
+        border: Border(bottom: BorderSide(color: AppColors.accent, width: 3)),
+      ),
+      child: Text(text, style: displayStyle(26).copyWith(height: 1.3)),
+    );
+    if (onTap == null) return label;
+    return Semantics(
+      button: true,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(6),
+        child: label,
+      ),
+    );
+  }
+}
+
+/// A date or time value with its label, opening a picker when tapped.
+class _PickerTile extends StatelessWidget {
+  const _PickerTile({
+    required this.icon,
+    required this.label,
+    required this.value,
+    required this.onTap,
+    this.detail,
+  });
+
+  final IconData icon;
+  final String label;
+  final String value;
+  final String? detail;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: AppColors.surface,
+      borderRadius: BorderRadius.circular(18),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.all(14),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Icon(icon, size: 14, color: AppColors.muted),
+                  const SizedBox(width: 6),
+                  Flexible(
+                    child: Text(
+                      label,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.muted,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 4),
+              Text(
+                value,
+                style: const TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              if (detail != null)
+                Text(
+                  detail!,
+                  style: const TextStyle(fontSize: 12, color: AppColors.muted),
+                ),
+            ],
           ),
         ),
-        const SizedBox(width: 10),
-        Text(
-          title,
-          style: Theme.of(
-            context,
-          ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
-        ),
-      ],
+      ),
     );
   }
 }

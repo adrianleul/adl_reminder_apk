@@ -1,21 +1,23 @@
 import 'package:adl_reminder/main.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'helpers.dart';
+
 void main() {
-  testWidgets('drawer language toggle switches the app to Amharic', (
+  testWidgets('settings language switch changes the app to Amharic', (
     tester,
   ) async {
+    usePhoneScreen(tester);
     await tester.pumpWidget(const ReminderApp());
+    await openTab(tester, 'Settings');
 
-    await tester.tap(find.byTooltip('Open navigation menu'));
+    expect(find.text('Language and calendar'), findsOneWidget);
+
+    await tester.tap(find.text('አማርኛ'));
     await tester.pumpAndSettle();
 
-    expect(find.text('All tasks'), findsOneWidget);
-
-    await tester.tap(find.text('አማ'));
-    await tester.pumpAndSettle();
-
-    expect(find.text('ሁሉም ተግባሮች'), findsOneWidget);
-    expect(find.text('ቋንቋ'), findsOneWidget);
+    expect(find.text('ቋንቋ እና የቀን መቁጠሪያ'), findsOneWidget);
+    // The tab bar is translated too.
+    expect(find.byTooltip('ዛሬ'), findsOneWidget);
   });
 }

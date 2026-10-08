@@ -1,6 +1,8 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 
-import '../models.dart';
+import '../l10n/app_localizations.dart';
 import '../utils/calendar_utils.dart';
 
 Future<EthiopianDateValue?> showEthiopianDatePickerDialog({
@@ -29,6 +31,8 @@ class _EthiopianDatePickerDialogState
   late int year;
   late int month;
   late int day;
+  late final int firstYear;
+  late final int lastYear;
 
   @override
   void initState() {
@@ -36,49 +40,56 @@ class _EthiopianDatePickerDialogState
     year = widget.initialDate.year;
     month = widget.initialDate.month;
     day = widget.initialDate.day;
+    // A window around the current year that always contains the initial date.
+    final currentYear = gregorianToEthiopian(DateTime.now()).year;
+    firstYear = math.min(currentYear - 5, year);
+    lastYear = math.max(currentYear + 20, year);
   }
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     final maxDay = ethiopianMonthLength(year, month);
     if (day > maxDay) day = maxDay;
 
     return AlertDialog(
-      title: const Text('Select Ethiopian date'),
+      title: Text(l10n.text('selectEthiopianDate')),
       content: SizedBox(
         width: 340,
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             DropdownButtonFormField<int>(
-              value: year,
-              decoration: const InputDecoration(
-                labelText: 'Year (EC)',
-                prefixIcon: Icon(Icons.calendar_today_outlined),
+              initialValue: year,
+              decoration: InputDecoration(
+                labelText: l10n.text('yearEc'),
+                prefixIcon: const Icon(Icons.calendar_today_outlined),
               ),
               items: [
-                for (int value = 2010; value <= 2040; value++)
+                for (int value = firstYear; value <= lastYear; value++)
                   DropdownMenuItem(value: value, child: Text('$value')),
               ],
               onChanged: (value) => setState(() => year = value ?? year),
             ),
             const SizedBox(height: 12),
             DropdownButtonFormField<int>(
-              value: month,
-              decoration: const InputDecoration(labelText: 'Month'),
+              initialValue: month,
+              decoration: InputDecoration(labelText: l10n.text('month')),
               items: [
-                for (int index = 0; index < ethiopianMonthNames.length; index++)
+                for (int value = 1; value <= 13; value++)
                   DropdownMenuItem(
-                    value: index + 1,
-                    child: Text(ethiopianMonthNames[index]),
+                    value: value,
+                    child: Text(ethiopianMonthName(l10n, value)),
                   ),
               ],
               onChanged: (value) => setState(() => month = value ?? month),
             ),
             const SizedBox(height: 12),
             DropdownButtonFormField<int>(
-              value: day,
-              decoration: const InputDecoration(labelText: 'Day'),
+              // Re-keyed because the valid days change with month and year.
+              key: ValueKey('$year-$month-$maxDay'),
+              initialValue: day,
+              decoration: InputDecoration(labelText: l10n.text('day')),
               items: [
                 for (int value = 1; value <= maxDay; value++)
                   DropdownMenuItem(value: value, child: Text('$value')),
@@ -89,12 +100,13 @@ class _EthiopianDatePickerDialogState
             Align(
               alignment: Alignment.centerLeft,
               child: Text(
-                'Gregorian equivalent: '
-                '${MaterialLocalizations.of(context).formatMediumDate(
-                  ethiopianToGregorian(
-                    EthiopianDateValue(year: year, month: month, day: day),
+                l10n.text('gregorianEquivalent', {
+                  'date': MaterialLocalizations.of(context).formatMediumDate(
+                    ethiopianToGregorian(
+                      EthiopianDateValue(year: year, month: month, day: day),
+                    ),
                   ),
-                )}',
+                }),
                 style: Theme.of(context).textTheme.bodySmall,
               ),
             ),
@@ -104,14 +116,14 @@ class _EthiopianDatePickerDialogState
       actions: [
         TextButton(
           onPressed: () => Navigator.pop(context),
-          child: const Text('Cancel'),
+          child: Text(l10n.text('cancel')),
         ),
         FilledButton(
           onPressed: () => Navigator.pop(
             context,
             EthiopianDateValue(year: year, month: month, day: day),
           ),
-          child: const Text('Select'),
+          child: Text(l10n.text('select')),
         ),
       ],
     );

@@ -2,6 +2,9 @@ import 'package:flutter/material.dart';
 
 import '../l10n/app_localizations.dart';
 import '../models.dart';
+import 'ethiopian_calendar.dart';
+
+export 'ethiopian_calendar.dart';
 
 const List<String> ethiopianMonthNames = <String>[
   'Meskerem',
@@ -19,103 +22,176 @@ const List<String> ethiopianMonthNames = <String>[
   'Pagume',
 ];
 
-bool isEthiopianLeapYear(int year) => year % 4 == 3;
+const List<String> ethiopianMonthNamesAmharic = <String>[
+  'መስከረም',
+  'ጥቅምት',
+  'ኅዳር',
+  'ታኅሣሥ',
+  'ጥር',
+  'የካቲት',
+  'መጋቢት',
+  'ሚያዝያ',
+  'ግንቦት',
+  'ሰኔ',
+  'ሐምሌ',
+  'ነሐሴ',
+  'ጳጉሜ',
+];
 
-int ethiopianMonthLength(int year, int month) {
-  if (month < 1 || month > 13) {
-    throw ArgumentError.value(month, 'month', 'Must be between 1 and 13.');
+/// Weekdays in display order (Sunday first, as on Ethiopian calendars), using
+/// [DateTime.weekday] numbering.
+const List<int> weekdayDisplayOrder = <int>[
+  DateTime.sunday,
+  DateTime.monday,
+  DateTime.tuesday,
+  DateTime.wednesday,
+  DateTime.thursday,
+  DateTime.friday,
+  DateTime.saturday,
+];
+
+const Map<int, String> _weekdaysEnglish = {
+  DateTime.monday: 'Mon',
+  DateTime.tuesday: 'Tue',
+  DateTime.wednesday: 'Wed',
+  DateTime.thursday: 'Thu',
+  DateTime.friday: 'Fri',
+  DateTime.saturday: 'Sat',
+  DateTime.sunday: 'Sun',
+};
+
+const Map<int, String> _weekdaysAmharic = {
+  DateTime.monday: 'ሰኞ',
+  DateTime.tuesday: 'ማክሰኞ',
+  DateTime.wednesday: 'ረቡዕ',
+  DateTime.thursday: 'ሐሙስ',
+  DateTime.friday: 'ዓርብ',
+  DateTime.saturday: 'ቅዳሜ',
+  DateTime.sunday: 'እሑድ',
+};
+
+String weekdayName(AppLocalizations l10n, int weekday) =>
+    (l10n.isAmharic ? _weekdaysAmharic : _weekdaysEnglish)[weekday]!;
+
+String ethiopianMonthName(AppLocalizations l10n, int month) => (l10n.isAmharic
+    ? ethiopianMonthNamesAmharic
+    : ethiopianMonthNames)[month - 1];
+
+String formatEthiopianDate(AppLocalizations l10n, EthiopianDateValue value) =>
+    '${ethiopianMonthName(l10n, value.month)} ${value.day}, '
+    '${value.year} ${l10n.text('ecSuffix')}';
+
+/// Formats a Gregorian date in the calendar the user picked for the task.
+String formatCalendarDate(
+  BuildContext context,
+  DateTime date,
+  CalendarSystem calendar,
+) {
+  if (calendar == CalendarSystem.ethiopian) {
+    return formatEthiopianDate(context.l10n, gregorianToEthiopian(date));
   }
-  if (month <= 12) return 30;
-  return isEthiopianLeapYear(year) ? 6 : 5;
-}
-
-DateTime ethiopianToGregorian(EthiopianDateValue value) {
-  final jdn =
-      1724221 +
-      365 * (value.year - 1) +
-      value.year ~/ 4 +
-      30 * (value.month - 1) +
-      value.day -
-      1;
-  return _jdnToGregorian(jdn);
-}
-
-EthiopianDateValue gregorianToEthiopian(DateTime date) {
-  final jdn = _gregorianToJdn(date.year, date.month, date.day);
-  var year = date.year - 8;
-
-  while (_ethiopianToJdn(year + 1, 1, 1) <= jdn) {
-    year++;
-  }
-  while (_ethiopianToJdn(year, 1, 1) > jdn) {
-    year--;
-  }
-
-  final dayOfYear = jdn - _ethiopianToJdn(year, 1, 1);
-  final month = dayOfYear ~/ 30 + 1;
-  final day = dayOfYear % 30 + 1;
-  return EthiopianDateValue(year: year, month: month, day: day);
-}
-
-int _ethiopianToJdn(int year, int month, int day) {
-  return 1724221 + 365 * (year - 1) + year ~/ 4 + 30 * (month - 1) + day - 1;
-}
-
-int _gregorianToJdn(int year, int month, int day) {
-  final a = (14 - month) ~/ 12;
-  final y = year + 4800 - a;
-  final m = month + 12 * a - 3;
-  return day +
-      (153 * m + 2) ~/ 5 +
-      365 * y +
-      y ~/ 4 -
-      y ~/ 100 +
-      y ~/ 400 -
-      32045;
-}
-
-DateTime _jdnToGregorian(int jdn) {
-  final a = jdn + 32044;
-  final b = (4 * a + 3) ~/ 146097;
-  final c = a - (146097 * b) ~/ 4;
-  final d = (4 * c + 3) ~/ 1461;
-  final e = c - (1461 * d) ~/ 4;
-  final m = (5 * e + 2) ~/ 153;
-  final day = e - (153 * m + 2) ~/ 5 + 1;
-  final month = m + 3 - 12 * (m ~/ 10);
-  final year = 100 * b + d - 4800 + m ~/ 10;
-  return DateTime(year, month, day);
+  return MaterialLocalizations.of(context).formatMediumDate(date);
 }
 
 String formatTaskSchedule(ReminderSchedule schedule, BuildContext context) {
-  final localizations = MaterialLocalizations.of(context);
-  final time = localizations.formatTimeOfDay(schedule.time);
+  final l10n = context.l10n;
+  final time = MaterialLocalizations.of(context).formatTimeOfDay(schedule.time);
+  String date(DateTime value) =>
+      formatCalendarDate(context, value, schedule.calendarSystem);
 
   switch (schedule.type) {
     case ReminderType.everyday:
-      return 'Every day at $time';
+      return l10n.text('everyDayAt', {'time': time});
     case ReminderType.specificDate:
-      if (schedule.calendarSystem == CalendarSystem.ethiopian &&
-          schedule.ethiopianDate != null) {
-        final value = schedule.ethiopianDate!;
-        return '${ethiopianMonthNames[value.month - 1]} ${value.day}, ${value.year} EC • $time';
-      }
       if (schedule.date == null) return time;
-      return '${localizations.formatMediumDate(schedule.date!)} • $time';
+      return l10n.text('dateAtTime', {
+        'date': date(schedule.date!),
+        'time': time,
+      });
     case ReminderType.dateRange:
       if (schedule.date == null || schedule.endDate == null) return time;
-      return context.l10n.text('rangeSchedule', {
-        'start': localizations.formatMediumDate(schedule.date!),
-        'end': localizations.formatMediumDate(schedule.endDate!),
+      return l10n.text('rangeSchedule', {
+        'start': date(schedule.date!),
+        'end': date(schedule.endDate!),
         'time': time,
       });
     case ReminderType.custom:
-      final unit = switch (schedule.recurrenceUnit) {
-        RecurrenceUnit.weekly => 'Weekly',
-        RecurrenceUnit.monthly => 'Monthly',
-        RecurrenceUnit.yearly => 'Yearly',
-        null => 'Custom',
-      };
-      return '$unit at $time';
+      final start = schedule.date;
+      switch (schedule.recurrenceUnit) {
+        case RecurrenceUnit.weekly:
+          final days = [
+            for (final day in weekdayDisplayOrder)
+              if (schedule.weekdays.contains(day)) weekdayName(l10n, day),
+          ].join(', ');
+          return l10n.text('weeklyOn', {'days': days, 'time': time});
+        case RecurrenceUnit.monthly:
+          if (start == null) return time;
+          final ethiopian = schedule.calendarSystem == CalendarSystem.ethiopian;
+          return l10n.text(ethiopian ? 'monthlyOnEthiopian' : 'monthlyOn', {
+            'day': ethiopian ? gregorianToEthiopian(start).day : start.day,
+            'time': time,
+          });
+        case RecurrenceUnit.yearly:
+          if (start == null) return time;
+          final String day;
+          if (schedule.calendarSystem == CalendarSystem.ethiopian) {
+            final value = gregorianToEthiopian(start);
+            day = '${ethiopianMonthName(l10n, value.month)} ${value.day}';
+          } else {
+            day = MaterialLocalizations.of(context).formatShortMonthDay(start);
+          }
+          return l10n.text('yearlyOn', {'date': day, 'time': time});
+        case null:
+          return time;
+      }
   }
+}
+
+/// Days, hours and minutes until a reminder fires, rounded up to the minute
+/// like a phone alarm (4 min 10 s counts as 5 minutes).
+({int days, int hours, int minutes}) countdownParts(Duration remaining) {
+  final totalMinutes = remaining.isNegative
+      ? 0
+      : (remaining.inSeconds + 59) ~/ 60;
+  return (
+    days: totalMinutes ~/ (24 * 60),
+    hours: totalMinutes % (24 * 60) ~/ 60,
+    minutes: totalMinutes % 60,
+  );
+}
+
+String unitLabel(AppLocalizations l10n, int count, String unit) =>
+    l10n.text(count == 1 ? 'unit$unit' : 'unit${unit}s');
+
+/// Time left until a reminder fires: "2 days, 3 hours, 5 minutes" from one
+/// day on, "3 hours, 5 minutes" under a day, and "5 minutes" under an hour.
+/// Units that are zero are left out.
+String formatTimeUntil(AppLocalizations l10n, Duration remaining) {
+  final parts = countdownParts(remaining);
+  if (parts.days == 0 && parts.hours == 0 && parts.minutes == 0) {
+    return l10n.text('lessThanMinute');
+  }
+  String unit(int count, String one, String many) =>
+      l10n.text(count == 1 ? one : many, {'count': count});
+
+  return [
+    if (parts.days > 0) unit(parts.days, 'durationDay', 'durationDays'),
+    if (parts.hours > 0) unit(parts.hours, 'durationHour', 'durationHours'),
+    if (parts.minutes > 0)
+      unit(parts.minutes, 'durationMinute', 'durationMinutes'),
+  ].join(l10n.text('listSeparator'));
+}
+
+/// Short form for chips and the Next up card: "2d 3h", "7h 15m", "45 min".
+String formatCompactTimeUntil(AppLocalizations l10n, Duration remaining) {
+  final parts = countdownParts(remaining);
+  if (parts.days > 0) {
+    return l10n.text('compactDays', {'d': parts.days, 'h': parts.hours});
+  }
+  if (parts.hours > 0) {
+    return l10n.text('compactHours', {'h': parts.hours, 'm': parts.minutes});
+  }
+  return l10n.text('compactMinutes', {
+    'm': parts.minutes < 1 ? 1 : parts.minutes,
+  });
 }
